@@ -3,14 +3,14 @@
     "readme_path": "../README.md"
   },
   "build": {
-    "path_prefix": "jira-terminal"
+    "path_prefix": "jira"
   },
   "components": {
     "changelog": true,
     "artifacts": {
       "package_managers": {
         "preferred": {
-          "crates.io": "cargo install jira-terminal"
+          "homebrew": "brew install alienengineer/jira/jira"
         }
       }
     }

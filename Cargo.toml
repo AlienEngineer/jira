@@ -1,21 +1,15 @@
 [package]
-name = "jira-terminal"
+name = "jira"
 version = "2.4.2"
-authors = ["Amrit Ghimire <iamritghimire@gmail.com>"]
+authors = ["alienengineer"]
 edition = "2018"
 description = "This is a command line application that can be used as a personal productivity tool for interacting with JIRA"
 readme = "README.md"
-homepage = "https://github.com/amritghimire/jira-terminal"
-repository = "https://github.com/amritghimire/jira-terminal"
+homepage = "https://github.com/alienengineer/jira"
+repository = "https://github.com/alienengineer/jira"
 keywords = ["jira","terminal","command-line"]
 license = "AGPL-3.0-only"
 categories = ["command-line-utilities"]
-
-[package.metadata.wix]
-upgrade-guid = "A8ACB116-285E-4707-B21D-F7BEB7801849"
-path-guid = "9FB820A6-7BB9-4E7A-AC62-0F43AA2B7171"
-license = false
-eula = false
 
 [dependencies]
 directories-next = "2.0"
@@ -40,20 +34,16 @@ cargo-dist-version = "0.13.0"
 # CI backends to support
 ci = ["github"]
 # The installers to generate for each app
-installers = ["shell", "powershell", "npm", "homebrew", "msi"]
+installers = ["homebrew"]
 # A GitHub repo to push Homebrew formulas to
-tap = "amritghimire/homebrew-jira-terminal"
+tap = "alienengineer/homebrew-jira"
 # Target platforms to build apps for (Rust target-triple syntax)
-targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-unknown-linux-musl", "x86_64-pc-windows-msvc"]
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-unknown-linux-musl"]
 # Publish jobs to run in CI
-publish-jobs = ["homebrew", "./publish-crates"]
+publish-jobs = ["homebrew"]
 # Publish jobs to run in CI
 pr-run-mode = "plan"
 # Whether to install an updater program
 install-updater = true
-# The archive format to use for windows builds (defaults .zip)
-windows-archive = ".tar.gz"
 # The archive format to use for non-windows builds (defaults .tar.xz)
 unix-archive = ".tar.gz"
-# A namespace to use when publishing this package to the npm registry
-npm-scope = "@amritghimire"

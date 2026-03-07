@@ -179,7 +179,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "jira-terminal"
+name = "jira"
 version = "2.4.2"
 dependencies = [
  "base64",

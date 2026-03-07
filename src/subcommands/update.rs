@@ -8,7 +8,7 @@ pub fn subcommand() -> App<'static, 'static> {
                 .long("field")
                 .takes_value(true)
                 .required(true)
-                .help("Key of field to update. You can use jira-terminal fields <TICKET> to see possible set of keys.")
+                .help("Key of field to update. You can use jira fields <TICKET> to see possible set of keys.")
                 )
                .arg(Arg::with_name("value")
                 .short("v")

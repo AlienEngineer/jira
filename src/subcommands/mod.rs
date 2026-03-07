@@ -58,11 +58,11 @@ pub fn handle_matches(mut app: App) {
             std::process::exit(1);
         }
         let shell = shell_parse.unwrap();
-        app.gen_completions_to("jira-terminal", shell, &mut io::stdout());
+        app.gen_completions_to("jira", shell, &mut io::stdout());
     } else {
         let result = app.print_long_help();
         if result.is_err() {
-            println!("Use jira-terminal help to view the available commands.");
+            println!("Use jira help to view the available commands.");
         }
         println!();
     }

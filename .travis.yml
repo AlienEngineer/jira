@@ -54,17 +54,17 @@ script:
 before_deploy: 
 - |-
     case $TRAVIS_OS_NAME in 
-      windows) cargo build --release; cp target/release/jira-terminal.exe ./ ;;
-      *) ./build-release jira-terminal ${TRAVIS_TAG}-${TRAVIS_OS_NAME} ;;
+      windows) cargo build --release; cp target/release/jira.exe ./ ;;
+      *) ./build-release jira ${TRAVIS_TAG}-${TRAVIS_OS_NAME} ;;
     esac
 deploy:
   provider: releases
   api_key: $GITHUB_TOKEN
   file_glob: true
   file: 
-    - "jira-terminal-${TRAVIS_TAG}-${TRAVIS_OS_NAME}.*"
-    - "jira-terminal"
-    - "jira-terminal.exe"
+    - "jira-${TRAVIS_TAG}-${TRAVIS_OS_NAME}.*"
+    - "jira"
+    - "jira.exe"
   skip_cleanup: true
   on:
     rust: stable

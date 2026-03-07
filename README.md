@@ -1,77 +1,65 @@
-## Jira Terminal
 
-This application can be used for personal usage to manage jira from terminal.
+# jira
+
+> **Fork Notice:** This project is a fork of [jira-terminal](https://github.com/amritghimire/jira-terminal) by Amrit Ghimire.
+It has been renamed and adapted for personal use with Homebrew as the sole distribution method.
+
+This application can be used for personal usage to manage Jira from the terminal.
 
 ## Installation
 
-This application can be used in multiple platform.
-
-### MacOS
-This package is available in brew as `jira-terminal`. You can install it with following command:
-```
-brew tap amritghimire/jira-terminal 
-brew install jira-terminal
-```
-
-### Arch Linux
-This package is available in aur repository as [jira-terminal-bin](https://aur.archlinux.org/packages/jira-terminal-bin/)
-
-### Debian/Ubuntu
-On debian based system, the deb file is available in [releases](https://github.com/amritghimire/jira-terminal/releases). You can download latest release from there. Please make sure libc is installed in your system.
-
-### Cargo
-If you already have a Rust environment set up, you can use the cargo install command:
-```cargo install jira-terminal```
-
-Cargo will build the jira-terminal binary and place it in $HOME/.cargo/bin.
-You can also setup Rust toolchain from [Rust official site](https://www.rust-lang.org/tools/install)
-
-### Manual Installation from Github
-Compiled binary versions of jira-terminal are uploaded to GitHub when a release is made. You can install jira-terminal manually by [downloading a release](https://github.com/amritghimire/jira-terminal/releases) , extracting it, and copying the binary to a directory in your $PATH, such as /usr/local/bin.
-
-
-## Autocompletion Script
-The autocompletion script can be found in [the release section](https://github.com/amritghimire/jira-terminal/releases).
-You can download the autocompletion script from there or use our application to generate the script.
-To generate the script, run:
+### Homebrew (macOS / Linux)
 
 ```bash
-jira-terminal autocompletion --shell [zsh|bash|fish|powershell|elvish] > _jira.terminal
+brew tap alienengineer/jira
+brew install jira
 ```
-Depending on your shell, you can move your autocompletion file to the following location:
-- *ZSH* - `/usr/share/zsh/site-functions/_jira-terminal`
-- *BASH* - `/usr/share/bash-completion/completions/_jira-terminal`
-- *Fish* - `/share/fish/vendor_completions.d/_jira-terminal`
 
+## Autocompletion Script
+
+To generate the autocompletion script, run:
+
+```bash
+jira autocompletion --shell [zsh|bash|fish|powershell|elvish] > _jira
+```
+
+Depending on your shell, you can move your autocompletion file to the following location:
+
+- *ZSH* - `/usr/share/zsh/site-functions/_jira`
+- *BASH* - `/usr/share/bash-completion/completions/_jira`
+- *Fish* - `/share/fish/vendor_completions.d/_jira`
 
 ## Usage
+
 When running the application for first time, you will be asked with following values.
+
 - hostname [This will be used to identify the jira hostname to be used.]
 - email [Email address you use to login with the application.]
 - token [You can obtain the app password from the link specified in the application]
 
 After that, you can use following commands for help.
+
 ```
-jira-terminal help
-jira-terminal help list
-jira-terminal help transition
-jira-terminal help alias
-jira-terminal help detail
-jira-terminal help fields
-jira-terminal help update
-jira-terminal help new
-jira-terminal help assign
-jira-terminal help comment
-jira-terminal help autocompletion
+jira help
+jira help list
+jira help transition
+jira help alias
+jira help detail
+jira help fields
+jira help update
+jira help new
+jira help assign
+jira help comment
+jira help autocompletion
 ```
 
 ```
-JIRA Terminal 2.0.0
-Amrit Ghimire <oss@amritghimire.com>
+JIRA 2.4.2
+alienengineer
 This is a command line application that can be used as a personal productivity tool for interacting with JIRA
 
 USAGE:
-    jira-terminal [SUBCOMMAND]
+    jira [SUBCOMMAND]
 
 FLAGS:
     -h, --help       Prints help information
@@ -93,13 +81,14 @@ SUBCOMMANDS:
 ```
 
 ### List of Tickets
+
 ```
 
-jira-terminal-list 
+jira-list 
 List the issues from JIRA.
 
 USAGE:
-    jira-terminal list [FLAGS] [OPTIONS]
+    jira list [FLAGS] [OPTIONS]
 
 FLAGS:
     -h, --help       Prints help information
@@ -140,18 +129,17 @@ You can specify the following fields multiple time to filter by multiple values.
 assignee, component, epic, filter, label, main, priority, project, reporter, sprint, status, type.
 
 For example to fetch list of tickets in Backlog and In progress, you can use
-jira-terminal list -s Backlog -s 'In Progress'
+jira list -s Backlog -s 'In Progress'
 ```
-
 
 ### Transition
 
 ```
-jira-terminal-transition 
+jira-transition 
 Transition of ticket across status.
 
 USAGE:
-    jira-terminal transition [FLAGS] <STATUS> --ticket <TICKET>
+    jira transition [FLAGS] <STATUS> --ticket <TICKET>
 
 FLAGS:
     -h, --help       Prints help information
@@ -166,14 +154,14 @@ ARGS:
 
 ```
 
-
 ### Alias
+
 ```
-jira-terminal-alias 
+jira-alias 
 Configuration for alias. One of add,list or remove is required.
 
 USAGE:
-    jira-terminal alias [FLAGS] <NAME> --add <add> --list --remove
+    jira alias [FLAGS] <NAME> --add <add> --list --remove
 
 FLAGS:
     -h, --help       Prints help information
@@ -189,17 +177,19 @@ ARGS:
 ```
 
 Sample usage:
-- `jira-terminal alias -l`
-- `jira-terminal alias alias_name -a "Alias Value"`
-- `jira-terminal alias -r alias_name` 
+
+- `jira alias -l`
+- `jira alias alias_name -a "Alias Value"`
+- `jira alias -r alias_name`
 
 ### Detail
+
 ```
-jira-terminal-detail 
+jira-detail 
 Detail of a JIRA tickets..
 
 USAGE:
-    jira-terminal detail [OPTIONS] <TICKET>
+    jira detail [OPTIONS] <TICKET>
 
 FLAGS:
     -h, --help       Prints help information
@@ -221,12 +211,13 @@ ARGS:
 ```
 
 ### Fields
+
 ```
-jira-terminal-fields 
+jira-fields 
 List of possible Fields for details...
 
 USAGE:
-    jira-terminal fields <TICKET>
+    jira fields <TICKET>
 
 FLAGS:
     -h, --help       Prints help information
@@ -237,34 +228,34 @@ ARGS:
 ```
 
 ### Update
+
 ```
-jira-terminal-update 
+jira-update 
 Update a field for a ticket
 
 USAGE:
-    jira-terminal update <TICKET> --field <field> --value <value>
+    jira update <TICKET> --field <field> --value <value>
 
 FLAGS:
     -h, --help       Prints help information
     -V, --version    Prints version information
 
 OPTIONS:
-    -f, --field <field>    Key of field to update. You can use jira-terminal fields <TICKET> to see possible set of
-                           keys.
+    -f, --field <field>    Key of field to update. You can use jira fields <TICKET> to see possible set of keys.
     -v, --value <value>    Value of the field to update.
 
 ARGS:
     <TICKET>    Ticket ID to update
 ```
 
-
 ### New
+
 ```
-jira-terminal-new 
+jira-new 
 Create a new ticket.
 
 USAGE:
-    jira-terminal new [FLAGS] [OPTIONS] --main <main> --project <project>
+    jira new [FLAGS] [OPTIONS] --main <main> --project <project>
 
 FLAGS:
     -h, --help       Prints help information
@@ -288,12 +279,13 @@ OPTIONS:
 ```
 
 ### Assign
+
 ```
-jira-terminal-assign 
+jira-assign 
 Assign a ticket to user.
 
 USAGE:
-    jira-terminal assign --ticket <ticket> --user <user>
+    jira assign --ticket <ticket> --user <user>
 
 FLAGS:
     -h, --help       Prints help information
@@ -305,12 +297,13 @@ OPTIONS:
 ```
 
 ### Comment
+
 ```
-jira-terminal-comment 
+jira-comment 
 List or add comments to a ticket. Default action is adding.
 
 USAGE:
-    jira-terminal comment [FLAGS] [OPTIONS] --ticket <ticket>
+    jira comment [FLAGS] [OPTIONS] --ticket <ticket>
 
 FLAGS:
     -h, --help       Prints help information
@@ -322,11 +315,3 @@ OPTIONS:
                              username or display name or email address.
     -t, --ticket <ticket>    Ticket to use.
 ```
-
-## Notes
-- The credentials and other configuration are stored following the XDG Base Directory specification:
-  - **Linux**: `$XDG_CONFIG_HOME/jira-terminal/configuration.json` (default: `~/.config/jira-terminal/configuration.json`)
-  - **macOS**: `~/Library/Application Support/jira-terminal/configuration.json`
-  - **Windows**: `%APPDATA%\jira-terminal\configuration.json`
-- The base64 encoded version of credentials are only written in the configuration file.
-- If upgrading from an older version, your config will be automatically migrated from `~/.jira_terminal_configuration.json` to the new location on first run.

@@ -20,9 +20,8 @@ fn get_old_config_file_name() -> Option<PathBuf> {
 
 /// Get the config file name following XDG Base Directory specification.
 /// This function uses the directories-next crate to provide XDG-compliant paths.
-/// On Linux: $XDG_CONFIG_HOME/jira-terminal/configuration.json (default: ~/.config/jira-terminal/configuration.json)
-/// On macOS: ~/Library/Application Support/jira-terminal/configuration.json
-/// On Windows: %APPDATA%\jira-terminal\configuration.json
+/// On Linux: $XDG_CONFIG_HOME/jira/configuration.json (default: ~/.config/jira/configuration.json)
+/// On macOS: ~/Library/Application Support/jira/configuration.json
 ///
 /// If the old config file exists at ~/.jira_terminal_configuration.json and the new location
 /// doesn't exist, the file will be automatically migrated.
@@ -30,13 +29,13 @@ fn get_old_config_file_name() -> Option<PathBuf> {
 /// # Example:
 /// ```
 /// // On Linux with XDG_CONFIG_HOME unset:
-/// assert!(get_config_file_name(), "/home/user/.config/jira-terminal/configuration.json".to_string());
+/// assert!(get_config_file_name(), "/home/user/.config/jira/configuration.json".to_string());
 /// ```
 pub fn get_config_file_name() -> String {
     use directories_next::ProjectDirs;
 
     // Try to get XDG-compliant config directory
-    if let Some(proj_dirs) = ProjectDirs::from("", "", "jira-terminal") {
+    if let Some(proj_dirs) = ProjectDirs::from("", "", "jira") {
         let config_dir = proj_dirs.config_dir();
         let new_config_path = config_dir.join("configuration.json");
 
@@ -60,7 +59,7 @@ pub fn get_config_file_name() -> String {
     }
 
     // Fallback to old behavior if ProjectDirs fails
-    let config_file_name: String = String::from(".jira_terminal_configuration.json");
+    let config_file_name: String = String::from(".jira_configuration.json");
     match home::home_dir() {
         Some(path) => format!("{}/{}", path.display(), config_file_name),
         None => config_file_name,
@@ -100,7 +99,7 @@ fn create_config() -> Result<()> {
     // Ask for the config file and create a new file.
     let mut namespace = String::new();
     let mut email = String::new();
-    println!("Welcome to JIRA Terminal.");
+    println!("Welcome to JIRA.");
     println!("Since this is your first run, we will ask you a few questions. ");
     println!("Please enter your hostname of JIRA. (Example: example.atlassian.net): ");
     io::stdin()
