@@ -315,11 +315,3 @@ OPTIONS:
                              username or display name or email address.
     -t, --ticket <ticket>    Ticket to use.
 ```
-
-## Notes
-
-- The credentials and other configuration are stored following the XDG Base Directory specification:
-  - **Linux**: `$XDG_CONFIG_HOME/jira/configuration.json` (default: `~/.config/jira/configuration.json`)
-  - **macOS**: `~/Library/Application Support/jira/configuration.json`
-- The base64 encoded version of credentials are only written in the configuration file.
-- If upgrading from jira-terminal, your config will be automatically migrated from `~/.jira_terminal_configuration.json` (or `~/.config/jira-terminal/`) to the new location on first run.
