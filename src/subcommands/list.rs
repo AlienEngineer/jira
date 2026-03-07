@@ -167,6 +167,6 @@ You can pass alias as option for display. You can save alias using alias subcomm
 assignee, component, epic, filter, label, main, priority, project, reporter, sprint, status, type.
 
 For example to fetch list of tickets in Backlog and In progress, you can use
-jira-terminal list -s Backlog -s 'In Progress'
+jira list -s Backlog -s 'In Progress'
             ")
 }

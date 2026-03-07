@@ -20,7 +20,7 @@ pub fn display_all_fields(ticket: String) {
     println!("{:=<65}", "=");
     println!(
         "\n\nNote: If you want to use custom fields as alias, you can add an alias as
-jira-terminal alias --add \"customfield_XXXXX\" new_field
+jira alias --add \"customfield_XXXXX\" new_field
 
 After that, you can pass new_field as options for field in details.
         "

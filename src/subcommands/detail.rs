@@ -11,7 +11,7 @@ pub fn subcommand() -> App<'static, 'static> {
 Possible options are: 
 key,summary,description,status,issuetype,priority,labels,assignee,components,creator,reporter,project,comment
 You can view complete list of fields from:
-jira-terminal fields KEY-XXXX
+jira fields KEY-XXXX
 
 You can use all to show all fields.
 Default selection are:

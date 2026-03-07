@@ -124,7 +124,7 @@ pub fn list_issues(matches: &ArgMatches) {
         let alias_name = matches.value_of("alias").unwrap();
         config::set_alias(alias_name.to_string(), jql);
         println!("Current filter is now set with value {alias_name}");
-        println!("You can use jira-terminal list --jql \"{alias_name}\" to reuse this filter.");
+        println!("You can use jira list --jql \"{alias_name}\" to reuse this filter.");
     }
     let issues = &search_response.unwrap()["issues"];
 
