@@ -44,9 +44,9 @@ pub fn handle(matches: &clap::ArgMatches) {
             }
         },
         "board-id" => {
-            crate::config::update_config("board_id".to_string(), value.to_string());
+            crate::config::update_config("board-id".to_string(), value.to_string());
             println!("Board id updated to {value}");
-            println!("Now you can list your current sprint using --sprint flag!");
+            println!("Now you can list your current sprint using 'jira sprint'!");
         }
         _ => {
             eprintln!("Unknown config key '{key}'.");
