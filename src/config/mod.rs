@@ -12,25 +12,10 @@ pub fn str_cap(s: String) -> String {
     format!("{}{}", (s[..1]).to_uppercase(), &s[1..])
 }
 
-/// Get the old (legacy) config file path for migration purposes.
-/// Returns: ~/.jira_terminal_configuration.json
 fn get_old_config_file_name() -> Option<PathBuf> {
-    home::home_dir().map(|path| path.join(".jira_terminal_configuration.json"))
+    home::home_dir().map(|path| path.join(".jira_configuration.json"))
 }
 
-/// Get the config file name following XDG Base Directory specification.
-/// This function uses the directories-next crate to provide XDG-compliant paths.
-/// On Linux: $XDG_CONFIG_HOME/jira/configuration.json (default: ~/.config/jira/configuration.json)
-/// On macOS: ~/Library/Application Support/jira/configuration.json
-///
-/// If the old config file exists at ~/.jira_terminal_configuration.json and the new location
-/// doesn't exist, the file will be automatically migrated.
-///
-/// # Example:
-/// ```
-/// // On Linux with XDG_CONFIG_HOME unset:
-/// assert!(get_config_file_name(), "/home/user/.config/jira/configuration.json".to_string());
-/// ```
 pub fn get_config_file_name() -> String {
     use directories_next::ProjectDirs;
 
@@ -96,35 +81,57 @@ fn check_config_exists() -> Result<bool> {
 
 /// Create configuration file by asking user with the required information.
 fn create_config() -> Result<()> {
-    // Ask for the config file and create a new file.
     let mut namespace = String::new();
-    let mut email = String::new();
-    println!("Welcome to JIRA.");
+    println!("Welcome to JIRA Terminal.");
     println!("Since this is your first run, we will ask you a few questions. ");
     println!("Please enter your hostname of JIRA. (Example: example.atlassian.net): ");
     io::stdin()
         .read_line(&mut namespace)
         .expect("Failed to read input.");
-    println!("Please enter your email address: ");
+
+    println!("Please select your authentication mode:");
+    println!("  1. Basic (email & password/token)");
+    println!("  2. Bearer token");
+    let mut auth_mode_input = String::new();
     io::stdin()
-        .read_line(&mut email)
+        .read_line(&mut auth_mode_input)
         .expect("Failed to read input.");
-    println!("Please create an API Token from https://id.atlassian.com/manage-profile/security/api-tokens. If your JIRA setup does not have api tokens plugin, you can enter the password too. ");
-    println!("Once created, enter your API Token: (The characters will not be visible in screen.Press enter after you entered the password or token) ");
-    let token = rpassword::read_password().unwrap();
-    let user_password = format!("{}:{}", email.trim(), token.trim());
-    let b64 = base64::encode(user_password);
+    let use_bearer = auth_mode_input.trim() == "2";
+    let auth_mode = if use_bearer { "Bearer" } else { "Basic" };
+
+    let (email, token) = if use_bearer {
+        println!("Please enter your Bearer token: (The characters will not be visible in screen. Press enter after you entered the token) ");
+        let bearer_token = rpassword::read_password().unwrap();
+        (String::new(), bearer_token.trim().to_string())
+    } else {
+        let mut email = String::new();
+        println!("Please enter your email address: ");
+        io::stdin()
+            .read_line(&mut email)
+            .expect("Failed to read input.");
+        println!("Please create an API Token from https://id.atlassian.com/manage-profile/security/api-tokens. If your JIRA setup does not have api tokens plugin, you can enter the password too. ");
+        println!("Once created, enter your API Token: (The characters will not be visible in screen. Press enter after you entered the password or token) ");
+        let password = rpassword::read_password().unwrap();
+        let user_password = format!("{}:{}", email.trim(), password.trim());
+        let b64 = base64::encode(user_password);
+        (email.trim().to_string(), b64)
+    };
 
     let mut configuration = json::object! {
         namespace: namespace.trim(),
-        email: email.trim(),
-        token: b64,
+        email: email.as_str(),
+        token: token.as_str(),
+        auth_mode: auth_mode,
         account_id: "",
         alias: {},
         transitions: {}
     };
-    let account_id = cache::get_username(&configuration)?;
-    configuration["account_id"] = account_id.into();
+
+    if !use_bearer {
+        let account_id = cache::get_username(&configuration)?;
+        configuration["account_id"] = account_id.into();
+    }
+
     write_config(configuration);
     Ok(())
 }
