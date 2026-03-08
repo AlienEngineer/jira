@@ -89,7 +89,7 @@ pub fn handle_sprint(_matches: &ArgMatches) {
     }
 
     // Try the on-disk cache first; fall back to a fresh API fetch
-    let (sprint_name, sprint_goal, pbis) =
+    let (sprint_name, sprint_goal, sprint_end_date, pbis) =
         if let Some(cached) = sprint::load_sprint_cache(&board_id) {
             println!("Loaded sprint from cache. Press F to refresh all items.");
             cached
@@ -101,14 +101,14 @@ pub fn handle_sprint(_matches: &ArgMatches) {
                     std::process::exit(1);
                 }
                 Ok(data) => {
-                    sprint::save_sprint_cache(&board_id, &data.0, &data.1, &data.2);
+                    sprint::save_sprint_cache(&board_id, &data.0, &data.1, &data.2, &data.3);
                     data
                 }
             }
         };
 
     let mut terminal = ratatui::init();
-    let result = SprintApp::new(sprint_name, sprint_goal, board_id, pbis).run(&mut terminal);
+    let result = SprintApp::new(sprint_name, sprint_goal, sprint_end_date, board_id, pbis).run(&mut terminal);
     ratatui::restore();
     if let Err(e) = result {
         eprintln!("TUI error: {e}");

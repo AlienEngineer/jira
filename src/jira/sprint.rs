@@ -56,7 +56,7 @@ fn cache_path(board_id: &str) -> PathBuf {
 
 /// Load sprint data from the on-disk cache. Returns `None` if the cache does
 /// not exist or is malformed.
-pub fn load_sprint_cache(board_id: &str) -> Option<(String, String, Vec<Pbi>)> {
+pub fn load_sprint_cache(board_id: &str) -> Option<(String, String, String, Vec<Pbi>)> {
     let path = cache_path(board_id);
     let mut file = fs::File::open(path).ok()?;
     let mut contents = String::new();
@@ -65,6 +65,7 @@ pub fn load_sprint_cache(board_id: &str) -> Option<(String, String, Vec<Pbi>)> {
 
     let sprint_name = data["sprint_name"].as_str()?.to_string();
     let sprint_goal = data["sprint_goal"].as_str().unwrap_or("").to_string();
+    let sprint_end_date = data["sprint_end_date"].as_str().unwrap_or("").to_string();
 
     let mut pbis = Vec::new();
     for item in data["pbis"].members() {
@@ -89,11 +90,17 @@ pub fn load_sprint_cache(board_id: &str) -> Option<(String, String, Vec<Pbi>)> {
         });
     }
 
-    Some((sprint_name, sprint_goal, pbis))
+    Some((sprint_name, sprint_goal, sprint_end_date, pbis))
 }
 
 /// Persist sprint data to the on-disk cache.
-pub fn save_sprint_cache(board_id: &str, sprint_name: &str, sprint_goal: &str, pbis: &[Pbi]) {
+pub fn save_sprint_cache(
+    board_id: &str,
+    sprint_name: &str,
+    sprint_goal: &str,
+    sprint_end_date: &str,
+    pbis: &[Pbi],
+) {
     let mut pbis_json = json::JsonValue::new_array();
     for pbi in pbis {
         let mut labels_json = json::JsonValue::new_array();
@@ -127,6 +134,7 @@ pub fn save_sprint_cache(board_id: &str, sprint_name: &str, sprint_goal: &str, p
     let data = json::object! {
         "sprint_name": sprint_name,
         "sprint_goal": sprint_goal,
+        "sprint_end_date": sprint_end_date,
         "pbis": pbis_json,
     };
 
@@ -140,10 +148,12 @@ pub fn save_sprint_cache(board_id: &str, sprint_name: &str, sprint_goal: &str, p
 
 /// Fetch issues for the active sprint on the given board.
 ///
-/// Returns a tuple of (sprint_name, sprint_goal, Vec<Pbi>).
+/// Returns a tuple of (sprint_name, sprint_goal, sprint_end_date, Vec<Pbi>).
+/// `sprint_end_date` is an ISO-8601 date string (e.g. "2026-03-20") or empty
+/// when the field is absent.
 pub fn fetch_active_sprint_issues(
     board_id: &str,
-) -> Result<(String, String, Vec<Pbi>), Box<dyn Error>> {
+) -> Result<(String, String, String, Vec<Pbi>), Box<dyn Error>> {
     // 1. Find the active sprint for the board
     let sprints_response = api::get_agile_call(format!("board/{board_id}/sprint?state=active"))?;
     let sprints = &sprints_response["values"];
@@ -157,6 +167,11 @@ pub fn fetch_active_sprint_issues(
         .unwrap_or("Active Sprint")
         .to_string();
     let sprint_goal = sprint["goal"].as_str().unwrap_or("").to_string();
+    // Keep only the date portion (first 10 chars) from an ISO-8601 timestamp.
+    let sprint_end_date = sprint["endDate"]
+        .as_str()
+        .map(|s| s.chars().take(10).collect::<String>())
+        .unwrap_or_default();
 
     // 2. Fetch all issues for that sprint (up to 500)
     let issues_response = api::get_agile_call(format!("sprint/{sprint_id}/issue?maxResults=500"))?;
@@ -193,7 +208,7 @@ pub fn fetch_active_sprint_issues(
     }
 
     sort_by_status(&mut pbis);
-    Ok((sprint_name, sprint_goal, pbis))
+    Ok((sprint_name, sprint_goal, sprint_end_date, pbis))
 }
 
 /// Fetch and populate rich details for a single PBI in place.
