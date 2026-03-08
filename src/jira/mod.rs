@@ -91,7 +91,7 @@ pub fn handle_sprint(_matches: &ArgMatches) {
     // Try the on-disk cache first; fall back to a fresh API fetch
     let (sprint_name, sprint_goal, pbis) =
         if let Some(cached) = sprint::load_sprint_cache(&board_id) {
-            println!("Loaded sprint from cache. Press L to refresh all items.");
+            println!("Loaded sprint from cache. Press F to refresh all items.");
             cached
         } else {
             println!("Fetching active sprint for board {board_id}...");

@@ -13,7 +13,7 @@ pub struct Pbi {
     pub status: String,
     pub assignee: String,
     pub issue_type: String,
-    // Rich details — populated when the user presses l/L
+    // Rich details — populated when the user presses f/F
     pub description: Option<String>,
     pub priority: Option<String>,
     pub story_points: Option<f64>,

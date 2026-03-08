@@ -13,14 +13,10 @@ use std::time::Duration;
 
 // Messages sent from the background "load all" thread to the UI thread.
 enum LoadMsg {
-    /// The thread is about to fetch this index.
-    Progress(usize),
-    /// Successfully fetched; carries the enriched Pbi.
-    ItemDone(usize, Pbi),
-    /// Fetch failed for this index.
-    ItemError(usize, String),
-    /// All items finished.
-    AllDone,
+    /// Sprint refreshed successfully; carries the new list of issues.
+    SprintRefreshed(Vec<Pbi>),
+    /// Refresh failed.
+    SprintError(String),
 }
 
 pub struct SprintApp {
@@ -113,25 +109,20 @@ impl SprintApp {
     // ── Bulk load (async thread → mpsc channel) ───────────────────────────────
 
     fn start_load_all(&mut self) {
-        // Clone what the thread needs; it can't borrow self.
-        let items: Vec<(usize, Pbi)> = self.pbis.iter().cloned().enumerate().collect();
+        let board_id = self.board_id.clone();
         let (tx, rx) = mpsc::channel();
         self.load_rx = Some(rx);
-        self.status_msg = format!("Loading all {} items…", items.len());
+        self.status_msg = "Refreshing sprint from Jira…".to_string();
 
         thread::spawn(move || {
-            for (idx, mut pbi) in items {
-                let _ = tx.send(LoadMsg::Progress(idx));
-                match sprint::fetch_pbi_details(&mut pbi) {
-                    Ok(()) => {
-                        let _ = tx.send(LoadMsg::ItemDone(idx, pbi));
-                    }
-                    Err(e) => {
-                        let _ = tx.send(LoadMsg::ItemError(idx, e.to_string()));
-                    }
+            match sprint::fetch_active_sprint_issues(&board_id) {
+                Ok((_name, _goal, pbis)) => {
+                    let _ = tx.send(LoadMsg::SprintRefreshed(pbis));
+                }
+                Err(e) => {
+                    let _ = tx.send(LoadMsg::SprintError(e.to_string()));
                 }
             }
-            let _ = tx.send(LoadMsg::AllDone);
         });
     }
 
@@ -139,32 +130,18 @@ impl SprintApp {
     fn process_load_messages(&mut self) {
         let done = {
             let Some(ref rx) = self.load_rx else { return };
-            let total = self.pbis.len();
             let mut done = false;
             loop {
                 match rx.try_recv() {
-                    Ok(LoadMsg::Progress(idx)) => {
-                        self.loading_idx = Some(idx);
+                    Ok(LoadMsg::SprintRefreshed(pbis)) => {
+                        let count = pbis.len();
+                        self.pbis = pbis;
+                        self.status_msg = format!("Refreshed — {count} issues loaded");
+                        done = true;
+                        break;
                     }
-                    Ok(LoadMsg::ItemDone(idx, pbi)) => {
-                        if idx < self.pbis.len() {
-                            self.pbis[idx] = pbi;
-                        }
-                        self.status_msg = format!("Loaded {}/{total}", idx + 1);
-                    }
-                    Ok(LoadMsg::ItemError(idx, e)) => {
-                        let key = self
-                            .pbis
-                            .get(idx)
-                            .map(|p| p.key.as_str())
-                            .unwrap_or("?")
-                            .to_string();
-                        self.status_msg = format!("Error {key}: {e}");
-                    }
-                    Ok(LoadMsg::AllDone) => {
-                        self.loading_idx = None;
-                        sprint::sort_by_status(&mut self.pbis);
-                        self.status_msg = format!("All {total} items loaded");
+                    Ok(LoadMsg::SprintError(e)) => {
+                        self.status_msg = format!("Error refreshing sprint: {e}");
                         done = true;
                         break;
                     }
@@ -322,9 +299,9 @@ impl SprintApp {
                 Span::raw(" "),
                 Span::styled("k/j", Style::default().fg(Color::Yellow).bold()),
                 Span::raw(" Navigate  "),
-                Span::styled("l", Style::default().fg(Color::Yellow).bold()),
+                Span::styled("f", Style::default().fg(Color::Yellow).bold()),
                 Span::raw(" Load line  "),
-                Span::styled("L", Style::default().fg(Color::Yellow).bold()),
+                Span::styled("F", Style::default().fg(Color::Yellow).bold()),
                 Span::raw(" Load all  "),
                 Span::styled("q", Style::default().fg(Color::Yellow).bold()),
                 Span::raw(" Quit"),
@@ -368,10 +345,10 @@ impl SprintApp {
                         self.table_state.select(Some(prev));
                         self.status_msg.clear();
                     }
-                    KeyCode::Char('l') => {
+                    KeyCode::Char('f') => {
                         self.load_selected(terminal)?;
                     }
-                    KeyCode::Char('L') => {
+                    KeyCode::Char('F') => {
                         // Only start if not already loading
                         if self.load_rx.is_none() {
                             self.start_load_all();
