@@ -99,15 +99,9 @@ pub fn handle_sprint(_matches: &ArgMatches) {
                 eprintln!("Error fetching sprint: {e}");
                 std::process::exit(1);
             }
-            Ok(data) => {
-                sprint::save_sprint_cache(
-                    &board_id,
-                    &data.name,
-                    &data.goal,
-                    &data.end_date,
-                    &data.pbis,
-                );
-                data
+            Ok(sprint) => {
+                sprint::save_sprint_cache(&board_id, &sprint);
+                sprint
             }
         }
     };

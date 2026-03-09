@@ -105,13 +105,23 @@ pub fn load_sprint_cache(board_id: &str) -> Option<Sprint> {
 }
 
 /// Persist sprint data to the on-disk cache.
-pub fn save_sprint_cache(
-    board_id: &str,
-    sprint_name: &str,
-    sprint_goal: &str,
-    sprint_end_date: &str,
-    pbis: &[Pbi],
-) {
+pub fn save_sprint_cache(board_id: &str, sprint: &Sprint) {
+    let pbis_json = convert_pbis_to_json(&sprint.pbis);
+
+    let data = json::object! {
+        "sprint_name": sprint.name.as_str(),
+        "sprint_goal": sprint.goal.as_str(),
+        "sprint_end_date": sprint.end_date.as_str(),
+        "pbis": pbis_json,
+    };
+
+    let path = cache_path(board_id);
+    if let Ok(mut file) = fs::File::create(path) {
+        let _ = file.write_all(json::stringify_pretty(data, 2).as_bytes());
+    }
+}
+
+fn convert_pbis_to_json(pbis: &[Pbi]) -> json::JsonValue {
     let mut pbis_json = json::JsonValue::new_array();
     for pbi in pbis {
         let mut labels_json = json::JsonValue::new_array();
@@ -141,18 +151,7 @@ pub fn save_sprint_cache(
         };
         let _ = pbis_json.push(obj);
     }
-
-    let data = json::object! {
-        "sprint_name": sprint_name,
-        "sprint_goal": sprint_goal,
-        "sprint_end_date": sprint_end_date,
-        "pbis": pbis_json,
-    };
-
-    let path = cache_path(board_id);
-    if let Ok(mut file) = fs::File::create(path) {
-        let _ = file.write_all(json::stringify_pretty(data, 2).as_bytes());
-    }
+    pbis_json
 }
 
 // ── API helpers ──────────────────────────────────────────────────────────────

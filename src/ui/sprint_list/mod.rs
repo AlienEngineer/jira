@@ -8,7 +8,7 @@ use progress_block::{ProgressBlock, SprintProgressData};
 use sprint_goal::SprintGoalWidget;
 use sprint_table::{SprintTable, TableAction};
 
-use crate::jira::sprint::{self, Pbi};
+use crate::jira::sprint::{self, Pbi, Sprint};
 use crossterm::event::{self, Event, KeyEventKind};
 use ratatui::layout::{Constraint, Layout};
 use std::time::Duration;
@@ -81,13 +81,13 @@ impl SprintApp {
     // ── Cache persistence ─────────────────────────────────────────────────────
 
     fn save_cache(&self) {
-        sprint::save_sprint_cache(
-            &self.board_id,
-            &self.goal.sprint_name,
-            &self.goal.sprint_goal,
-            &self.sprint_end_date,
-            self.table.pbis(),
-        );
+        let sprint = Sprint {
+            name: self.goal.sprint_name.to_string(),
+            goal: self.goal.sprint_goal.to_string(),
+            end_date: self.sprint_end_date.to_string(),
+            pbis: self.table.pbis().to_vec(),
+        };
+        sprint::save_sprint_cache(&self.board_id, &sprint);
     }
 
     // ── Layout & rendering ────────────────────────────────────────────────────
