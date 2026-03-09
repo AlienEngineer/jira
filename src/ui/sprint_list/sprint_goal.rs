@@ -16,13 +16,20 @@ pub struct SprintGoalWidget {
 
 impl SprintGoalWidget {
     pub fn new(sprint_name: String, sprint_goal: String) -> Self {
-        Self { sprint_name, sprint_goal }
+        Self {
+            sprint_name,
+            sprint_goal,
+        }
     }
 
     /// Height (in terminal rows) required for the goal block.
     /// Returns 0 when no goal is set (the slot collapses entirely).
     pub fn goal_height(&self) -> u16 {
-        if self.sprint_goal.is_empty() { 0 } else { 3 }
+        if self.sprint_goal.is_empty() {
+            0
+        } else {
+            3
+        }
     }
 
     /// Render the single-line title bar (sprint name).
@@ -32,7 +39,9 @@ impl SprintGoalWidget {
                 Span::raw(" Sprint: "),
                 Span::styled(
                     self.sprint_name.clone(),
-                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
                 ),
             ]),
             area,

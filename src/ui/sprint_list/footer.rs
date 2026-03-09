@@ -15,7 +15,9 @@ pub struct Footer {
 
 impl Footer {
     pub fn new() -> Self {
-        Self { status_msg: String::new() }
+        Self {
+            status_msg: String::new(),
+        }
     }
 
     pub fn set_status(&mut self, msg: impl Into<String>) {

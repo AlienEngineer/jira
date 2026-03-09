@@ -21,6 +21,13 @@ pub struct Pbi {
     pub loaded: bool,
 }
 
+pub struct Sprint {
+    pub name: String,
+    pub goal: String,
+    pub end_date: String,
+    pub pbis: Vec<Pbi>,
+}
+
 /// Numeric sort key for a status string: lower = earlier in the workflow.
 ///
 /// Order: To Do → In Progress → In Review → Blocked → Done / Closed
@@ -56,7 +63,7 @@ fn cache_path(board_id: &str) -> PathBuf {
 
 /// Load sprint data from the on-disk cache. Returns `None` if the cache does
 /// not exist or is malformed.
-pub fn load_sprint_cache(board_id: &str) -> Option<(String, String, String, Vec<Pbi>)> {
+pub fn load_sprint_cache(board_id: &str) -> Option<Sprint> {
     let path = cache_path(board_id);
     let mut file = fs::File::open(path).ok()?;
     let mut contents = String::new();
@@ -89,8 +96,12 @@ pub fn load_sprint_cache(board_id: &str) -> Option<(String, String, String, Vec<
             loaded: item["loaded"].as_bool().unwrap_or(false),
         });
     }
-
-    Some((sprint_name, sprint_goal, sprint_end_date, pbis))
+    Some(Sprint {
+        name: sprint_name,
+        goal: sprint_goal,
+        end_date: sprint_end_date,
+        pbis,
+    })
 }
 
 /// Persist sprint data to the on-disk cache.
@@ -151,9 +162,7 @@ pub fn save_sprint_cache(
 /// Returns a tuple of (sprint_name, sprint_goal, sprint_end_date, Vec<Pbi>).
 /// `sprint_end_date` is an ISO-8601 date string (e.g. "2026-03-20") or empty
 /// when the field is absent.
-pub fn fetch_active_sprint_issues(
-    board_id: &str,
-) -> Result<(String, String, String, Vec<Pbi>), Box<dyn Error>> {
+pub fn fetch_active_sprint_issues(board_id: &str) -> Result<Sprint, Box<dyn Error>> {
     // 1. Find the active sprint for the board
     let sprints_response = api::get_agile_call(format!("board/{board_id}/sprint?state=active"))?;
     let sprints = &sprints_response["values"];
@@ -208,7 +217,12 @@ pub fn fetch_active_sprint_issues(
     }
 
     sort_by_status(&mut pbis);
-    Ok((sprint_name, sprint_goal, sprint_end_date, pbis))
+    Ok(Sprint {
+        name: sprint_name,
+        goal: sprint_goal,
+        end_date: sprint_end_date,
+        pbis,
+    })
 }
 
 /// Fetch and populate rich details for a single PBI in place.

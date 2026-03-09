@@ -109,16 +109,16 @@ impl SprintTable {
         let (tx, rx) = mpsc::channel();
         self.load_rx = Some(rx);
 
-        thread::spawn(move || {
-            match sprint::fetch_active_sprint_issues(&board_id) {
-                Ok((_name, _goal, end_date, pbis)) => {
-                    let _ = tx.send(LoadMsg::SprintRefreshed(pbis, end_date));
+        thread::spawn(
+            move || match sprint::fetch_active_sprint_issues(&board_id) {
+                Ok(sprint) => {
+                    let _ = tx.send(LoadMsg::SprintRefreshed(sprint.pbis, sprint.end_date));
                 }
                 Err(e) => {
                     let _ = tx.send(LoadMsg::SprintError(e.to_string()));
                 }
-            }
-        });
+            },
+        );
     }
 
     /// Drain one pending message from the background refresh thread.
@@ -144,7 +144,11 @@ impl SprintTable {
                 self.pbis = pbis;
                 LoadUpdate {
                     status: format!("Refreshed — {count} issues loaded"),
-                    new_end_date: if end_date.is_empty() { None } else { Some(end_date) },
+                    new_end_date: if end_date.is_empty() {
+                        None
+                    } else {
+                        Some(end_date)
+                    },
                 }
             }
             LoadMsg::SprintError(e) => LoadUpdate {
@@ -158,14 +162,22 @@ impl SprintTable {
 
     fn navigate_down(&mut self) {
         let next = self.table_state.selected().map_or(0, |i| {
-            if i >= self.pbis.len().saturating_sub(1) { 0 } else { i + 1 }
+            if i >= self.pbis.len().saturating_sub(1) {
+                0
+            } else {
+                i + 1
+            }
         });
         self.table_state.select(Some(next));
     }
 
     fn navigate_up(&mut self) {
         let prev = self.table_state.selected().map_or(0, |i| {
-            if i == 0 { self.pbis.len().saturating_sub(1) } else { i - 1 }
+            if i == 0 {
+                self.pbis.len().saturating_sub(1)
+            } else {
+                i - 1
+            }
         });
         self.table_state.select(Some(prev));
     }
@@ -215,7 +227,9 @@ impl SprintTable {
 
         let payload = json::object! { "accountId": account_id.as_str() };
         if let Err(e) = api::put_call(format!("issue/{key}/assignee"), payload, 3) {
-            return vec![TableAction::SetStatus(format!("Error assigning {key}: {e}"))];
+            return vec![TableAction::SetStatus(format!(
+                "Error assigning {key}: {e}"
+            ))];
         }
 
         let email = crate::config::get_config("email".to_string());
@@ -225,9 +239,7 @@ impl SprintTable {
         match transitions::get_transition_code(key.clone(), "in progress".to_string()) {
             Some(code) => {
                 let json_object = json::object! { "transition": { "id": code } };
-                if let Err(e) =
-                    api::post_call(format!("issue/{key}/transitions"), json_object, 3)
-                {
+                if let Err(e) = api::post_call(format!("issue/{key}/transitions"), json_object, 3) {
                     return vec![TableAction::SetStatus(format!(
                         "Error transitioning {key}: {e}"
                     ))];
@@ -364,7 +376,9 @@ impl SprintTable {
                 KeyCode::Char('F') => {
                     if self.load_rx.is_none() {
                         self.start_load_all();
-                        vec![TableAction::SetStatus("Refreshing sprint from Jira…".into())]
+                        vec![TableAction::SetStatus(
+                            "Refreshing sprint from Jira…".into(),
+                        )]
                     } else {
                         vec![]
                     }
@@ -409,8 +423,11 @@ impl SprintTable {
                 };
 
                 let indicator = if self.loading_idx == Some(idx) {
-                    Cell::from("⟳")
-                        .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+                    Cell::from("⟳").style(
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
+                    )
                 } else if pbi.loaded {
                     Cell::from("✓").style(Style::default().fg(Color::Green))
                 } else {
@@ -445,7 +462,11 @@ impl SprintTable {
                 .title(format!(" {} items ", self.pbis.len()))
                 .title_alignment(Alignment::Right),
         )
-        .row_highlight_style(Style::default().bg(Color::Blue).add_modifier(Modifier::BOLD))
+        .row_highlight_style(
+            Style::default()
+                .bg(Color::Blue)
+                .add_modifier(Modifier::BOLD),
+        )
         .highlight_symbol(">> ");
 
         frame.render_stateful_widget(table_widget, area, &mut self.table_state);
@@ -467,7 +488,9 @@ impl SprintTable {
         let block = Block::bordered()
             .title(Span::styled(
                 " Create Git Branch ",
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
             ))
             .border_style(Style::default().fg(Color::Cyan));
 
@@ -480,7 +503,9 @@ impl SprintTable {
                 Line::from(""),
                 Line::from(Span::styled(
                     input_display,
-                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
                 )),
                 Line::from(""),
                 Line::from(vec![
