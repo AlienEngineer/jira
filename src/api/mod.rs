@@ -2,6 +2,21 @@ use std::error::Error;
 
 pub mod request;
 
+pub trait JsonValueExt {
+    fn as_string_or(&self, default: &str) -> String;
+    fn as_u64_or_0(&self) -> u64;
+}
+
+impl JsonValueExt for json::JsonValue {
+    fn as_string_or(&self, default: &str) -> String {
+        self.as_str().unwrap_or(default).to_string()
+    }
+
+    fn as_u64_or_0(&self) -> u64 {
+        self.as_u64().unwrap_or_default()
+    }
+}
+
 fn handle_response_error_json(
     url: &str,
     response: Result<ureq::Response, ureq::Error>,

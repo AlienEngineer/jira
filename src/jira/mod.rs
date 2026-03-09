@@ -100,7 +100,7 @@ pub fn handle_sprint(_matches: &ArgMatches) {
                 std::process::exit(1);
             }
             Ok(sprint) => {
-                sprint::save_sprint_cache(&board_id, &sprint);
+                sprint::save_sprint_cache(&sprint);
                 sprint
             }
         }

@@ -1,3 +1,4 @@
+use crate::api::JsonValueExt;
 use crate::config;
 use crate::jira::api;
 use std::error::Error;
@@ -21,33 +22,30 @@ pub struct Pbi {
     pub loaded: bool,
 }
 
+// TODO: eval if these fields really need to be String or can be &str
+#[derive(Debug, Clone)]
 pub struct Sprint {
     pub name: String,
     pub goal: String,
     pub end_date: String,
     pub pbis: Vec<Pbi>,
+    pub board_id: String,
 }
 
-/// Numeric sort key for a status string: lower = earlier in the workflow.
-///
-/// Order: To Do → In Progress → In Review → Blocked → Done / Closed
 fn status_sort_key(status: &str) -> u8 {
-    let s = status.to_lowercase();
-    if s.contains("done") || s.contains("closed") || s.contains("resolved") {
-        4
-    } else if s.contains("blocked") {
-        3
-    } else if s.contains("review") {
-        2
-    } else if s.contains("progress") {
-        1
-    } else {
-        // "To Do", "Open", "Backlog", anything unrecognised → first
-        0
+    match status.to_lowercase().as_str() {
+        "closed" => 10,
+        "resolved" => 9,
+        "blocked" => 8,
+        "pending" => 8,
+        "in review" => 7,
+        "in progress" => 6,
+        "open" => 4,
+        "new" => 2,
+        _ => 0,
     }
 }
 
-/// Sort a PBI slice in ascending workflow order (new → resolved).
 pub fn sort_by_status(pbis: &mut [Pbi]) {
     pbis.sort_by_key(|p| status_sort_key(&p.status));
 }
@@ -70,10 +68,6 @@ pub fn load_sprint_cache(board_id: &str) -> Option<Sprint> {
     file.read_to_string(&mut contents).ok()?;
     let data = json::parse(&contents).ok()?;
 
-    let sprint_name = data["sprint_name"].as_str()?.to_string();
-    let sprint_goal = data["sprint_goal"].as_str().unwrap_or("").to_string();
-    let sprint_end_date = data["sprint_end_date"].as_str().unwrap_or("").to_string();
-
     let mut pbis = Vec::new();
     for item in data["pbis"].members() {
         let labels = item["labels"]
@@ -81,14 +75,11 @@ pub fn load_sprint_cache(board_id: &str) -> Option<Sprint> {
             .filter_map(|l| l.as_str().map(|s| s.to_string()))
             .collect();
         pbis.push(Pbi {
-            key: item["key"].as_str().unwrap_or("").to_string(),
-            summary: item["summary"].as_str().unwrap_or("").to_string(),
-            status: item["status"].as_str().unwrap_or("").to_string(),
-            assignee: item["assignee"]
-                .as_str()
-                .unwrap_or("Unassigned")
-                .to_string(),
-            issue_type: item["issue_type"].as_str().unwrap_or("").to_string(),
+            key: item["key"].as_string_or(""),
+            summary: item["summary"].as_string_or(""),
+            status: item["status"].as_string_or(""),
+            assignee: item["assignee"].as_string_or("Unassigned"),
+            issue_type: item["issue_type"].as_string_or(""),
             description: item["description"].as_str().map(|s| s.to_string()),
             priority: item["priority"].as_str().map(|s| s.to_string()),
             story_points: item["story_points"].as_f64(),
@@ -96,16 +87,18 @@ pub fn load_sprint_cache(board_id: &str) -> Option<Sprint> {
             loaded: item["loaded"].as_bool().unwrap_or(false),
         });
     }
+
+    sort_by_status(&mut pbis);
     Some(Sprint {
-        name: sprint_name,
-        goal: sprint_goal,
-        end_date: sprint_end_date,
+        name: data["sprint_name"].as_string_or(""),
+        goal: data["sprint_goal"].as_string_or(""),
+        end_date: data["sprint_end_date"].as_string_or(""),
         pbis,
+        board_id: data["board_id"].as_string_or(board_id),
     })
 }
 
-/// Persist sprint data to the on-disk cache.
-pub fn save_sprint_cache(board_id: &str, sprint: &Sprint) {
+pub fn save_sprint_cache(sprint: &Sprint) {
     let pbis_json = convert_pbis_to_json(&sprint.pbis);
 
     let data = json::object! {
@@ -113,9 +106,10 @@ pub fn save_sprint_cache(board_id: &str, sprint: &Sprint) {
         "sprint_goal": sprint.goal.as_str(),
         "sprint_end_date": sprint.end_date.as_str(),
         "pbis": pbis_json,
+        "board_id": sprint.board_id.as_str()
     };
 
-    let path = cache_path(board_id);
+    let path = cache_path(sprint.board_id.as_str());
     if let Ok(mut file) = fs::File::create(path) {
         let _ = file.write_all(json::stringify_pretty(data, 2).as_bytes());
     }
@@ -162,50 +156,39 @@ fn convert_pbis_to_json(pbis: &[Pbi]) -> json::JsonValue {
 /// `sprint_end_date` is an ISO-8601 date string (e.g. "2026-03-20") or empty
 /// when the field is absent.
 pub fn fetch_active_sprint_issues(board_id: &str) -> Result<Sprint, Box<dyn Error>> {
-    // 1. Find the active sprint for the board
+    let board_id: &str = board_id;
     let sprints_response = api::get_agile_call(format!("board/{board_id}/sprint?state=active"))?;
     let sprints = &sprints_response["values"];
     if !sprints.is_array() || sprints.is_empty() {
         return Err("No active sprint found for the given board.".into());
     }
     let sprint = &sprints[0];
-    let sprint_id = sprint["id"].as_u64().ok_or("Could not read sprint id")?;
-    let sprint_name = sprint["name"]
-        .as_str()
-        .unwrap_or("Active Sprint")
-        .to_string();
-    let sprint_goal = sprint["goal"].as_str().unwrap_or("").to_string();
-    // Keep only the date portion (first 10 chars) from an ISO-8601 timestamp.
-    let sprint_end_date = sprint["endDate"]
-        .as_str()
-        .map(|s| s.chars().take(10).collect::<String>())
-        .unwrap_or_default();
+    let sprint_id = sprint["id"].as_u64_or_0();
+    Ok(Sprint {
+        name: sprint["name"].as_string_or("Active Sprint"),
+        goal: sprint["goal"].as_string_or(""),
+        end_date: sprint["endDate"]
+            .as_str()
+            .map(|s| s.chars().take(10).collect::<String>())
+            .unwrap_or_default(),
+        pbis: fetch_sprint_pbis(sprint_id)?,
+        board_id: board_id.to_string(),
+    })
+}
 
-    // 2. Fetch all issues for that sprint (up to 500)
+fn fetch_sprint_pbis(sprint_id: u64) -> Result<Vec<Pbi>, Box<dyn Error + 'static>> {
     let issues_response = api::get_agile_call(format!("sprint/{sprint_id}/issue?maxResults=500"))?;
     let issues = &issues_response["issues"];
-
     let mut pbis = Vec::new();
     if issues.is_array() {
         for issue in issues.members() {
-            let key = issue["key"].as_str().unwrap_or("").to_string();
             let fields = &issue["fields"];
-            let summary = fields["summary"].as_str().unwrap_or("").to_string();
-            let status = fields["status"]["name"].as_str().unwrap_or("-").to_string();
-            let assignee = fields["assignee"]["displayName"]
-                .as_str()
-                .unwrap_or("Unassigned")
-                .to_string();
-            let issue_type = fields["issuetype"]["name"]
-                .as_str()
-                .unwrap_or("-")
-                .to_string();
             pbis.push(Pbi {
-                key,
-                summary,
-                status,
-                assignee,
-                issue_type,
+                key: issue["key"].as_string_or(""),
+                summary: fields["summary"].as_string_or(""),
+                status: fields["status"]["name"].as_string_or("-"),
+                assignee: fields["assignee"]["displayName"].as_string_or("Unassigned"),
+                issue_type: fields["issuetype"]["name"].as_string_or("-"),
                 description: None,
                 priority: None,
                 story_points: None,
@@ -214,14 +197,8 @@ pub fn fetch_active_sprint_issues(board_id: &str) -> Result<Sprint, Box<dyn Erro
             });
         }
     }
-
     sort_by_status(&mut pbis);
-    Ok(Sprint {
-        name: sprint_name,
-        goal: sprint_goal,
-        end_date: sprint_end_date,
-        pbis,
-    })
+    Ok(pbis)
 }
 
 /// Fetch and populate rich details for a single PBI in place.

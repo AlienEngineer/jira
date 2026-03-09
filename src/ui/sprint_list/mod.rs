@@ -33,6 +33,7 @@ pub struct SprintApp {
 }
 
 impl SprintApp {
+    // TODO: use Sprint struct instead of all of these fields.
     pub fn new(
         sprint_name: String,
         sprint_goal: String,
@@ -76,15 +77,13 @@ impl SprintApp {
     // ── Cache persistence ─────────────────────────────────────────────────────
 
     fn save_cache(&self) {
-        sprint::save_sprint_cache(
-            &self.board_id,
-            &Sprint {
-                name: self.goal.sprint_name.to_string(),
-                goal: self.goal.sprint_goal.to_string(),
-                end_date: self.sprint_end_date.to_string(),
-                pbis: self.table.pbis().to_vec(),
-            },
-        );
+        sprint::save_sprint_cache(&Sprint {
+            name: self.goal.sprint_name.to_string(),
+            goal: self.goal.sprint_goal.to_string(),
+            end_date: self.sprint_end_date.to_string(),
+            pbis: self.table.pbis().to_vec(),
+            board_id: self.board_id.to_string(),
+        });
     }
 
     // ── Layout & rendering ────────────────────────────────────────────────────
