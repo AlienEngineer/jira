@@ -16,15 +16,16 @@ use ratatui::{
 pub struct SprintProgressData {
     pub resolved: usize,
     pub total: usize,
-    /// ISO-8601 date string (YYYY-MM-DD) for the sprint end, empty when unknown.
-    pub end_date: String,
+    /// Number of Mon–Fri working days from today to `end_date` (inclusive).
+    /// `None` when `end_date` is absent or unparseable; `Some(0)` when past.
+    pub working_days_remaining: Option<i64>,
 }
 
 impl SprintProgressData {
     /// Map raw sprint data into the shape the progress block needs.
     ///
-    /// This is the single place that defines which statuses count as "resolved"
-    /// and how to extract the end-date string.
+    /// This is the single place that defines which statuses count as "resolved",
+    /// how to extract the end-date string, and how to compute working days.
     pub fn from_sprint(pbis: &[Pbi], end_date: &str) -> Self {
         let total = pbis.len();
         let resolved = pbis
@@ -34,11 +35,44 @@ impl SprintProgressData {
                 s.contains("closed") || s.contains("resolved")
             })
             .count();
+        let working_days_remaining = Self::compute_working_days(end_date);
         Self {
             resolved,
             total,
-            end_date: end_date.to_string(),
+            working_days_remaining,
         }
+    }
+
+    fn fun_name(end: chrono::NaiveDate, today: chrono::NaiveDate) -> Option<i64> {
+        use chrono::{Datelike, Weekday};
+        let mut count = 0i64;
+        let mut d = today;
+        while d <= end {
+            match d.weekday() {
+                Weekday::Sat | Weekday::Sun => {}
+                _ => count += 1,
+            }
+            d = d.succ_opt()?;
+        }
+        Some(count)
+    }
+    /// Count weekdays (Mon–Fri) from today through `end_date_str` (inclusive).
+    /// Returns `None` when the string is absent or unparseable; `Some(0)` when
+    /// the sprint end date is in the past.
+    fn compute_working_days(end_date_str: &str) -> Option<i64> {
+        use chrono::{Local, NaiveDate};
+
+        if end_date_str.is_empty() {
+            return None;
+        }
+        let end =
+            NaiveDate::parse_from_str(&end_date_str[..10.min(end_date_str.len())], "%Y-%m-%d")
+                .ok()?;
+        let today = Local::now().date().naive_local();
+        if today > end {
+            return Some(0);
+        }
+        Self::fun_name(end, today)
     }
 }
 
@@ -71,7 +105,7 @@ impl ProgressBlock {
         };
         let bar = format!("[{}{}]", "█".repeat(filled), "░".repeat(BAR_WIDTH - filled),);
 
-        let days_label = match Self::working_days_remaining(&data.end_date) {
+        let days_label = match data.working_days_remaining {
             Some(0) => " ⏱ Sprint ends today!".to_string(),
             Some(d) => format!(" ⏱ {} working day{} left", d, if d == 1 { "" } else { "s" }),
             None => String::new(),
@@ -106,33 +140,6 @@ impl ProgressBlock {
             ),
             area,
         );
-    }
-
-    /// Count weekdays (Mon–Fri) from today through `end_date_str` (inclusive).
-    /// Returns `None` when the string is absent or unparseable.
-    fn working_days_remaining(end_date_str: &str) -> Option<i64> {
-        use chrono::{Datelike, Local, NaiveDate, Weekday};
-
-        if end_date_str.is_empty() {
-            return None;
-        }
-        let end =
-            NaiveDate::parse_from_str(&end_date_str[..10.min(end_date_str.len())], "%Y-%m-%d")
-                .ok()?;
-        let today = Local::now().date().naive_local();
-        if today > end {
-            return Some(0);
-        }
-        let mut count = 0i64;
-        let mut d = today;
-        while d <= end {
-            match d.weekday() {
-                Weekday::Sat | Weekday::Sun => {}
-                _ => count += 1,
-            }
-            d = d.succ_opt()?;
-        }
-        Some(count)
     }
 }
 
@@ -258,7 +265,7 @@ mod tests {
         ];
         let data = SprintProgressData::from_sprint(&pbis, "");
         assert_eq!(data.total, 6);
-        assert_eq!(data.resolved, 2);
+        assert_eq!(data.resolved, 2); // Closed + Resolved only ("Done" does not count)
     }
 
     #[test]
@@ -296,5 +303,47 @@ mod tests {
         // The mapping stores the string as-is; the renderer trims to 10 chars.
         let data = SprintProgressData::from_sprint(&[], "2026-03-20T00:00:00.000Z");
         assert_eq!(data.end_date, "2026-03-20T00:00:00.000Z");
+    }
+
+    // ── working_days_remaining ────────────────────────────────────────────────
+
+    #[test]
+    fn empty_end_date_gives_none_working_days() {
+        let data = SprintProgressData::from_sprint(&[], "");
+        assert_eq!(data.working_days_remaining, None);
+    }
+
+    #[test]
+    fn unparseable_end_date_gives_none_working_days() {
+        let data = SprintProgressData::from_sprint(&[], "not-a-date");
+        assert_eq!(data.working_days_remaining, None);
+    }
+
+    #[test]
+    fn past_end_date_gives_zero_working_days() {
+        // A date well in the past should always return Some(0).
+        let data = SprintProgressData::from_sprint(&[], "2000-01-01");
+        assert_eq!(data.working_days_remaining, Some(0));
+    }
+
+    #[test]
+    fn future_end_date_gives_positive_working_days() {
+        // A date far in the future must have at least one working day.
+        let data = SprintProgressData::from_sprint(&[], "2099-12-31");
+        assert!(
+            data.working_days_remaining.is_some_and(|d| d > 0),
+            "expected positive working days for a far-future date"
+        );
+    }
+
+    #[test]
+    fn iso_timestamp_end_date_is_parsed_correctly() {
+        // Full ISO-8601 timestamps should be handled (only first 10 chars used).
+        let data_ts = SprintProgressData::from_sprint(&[], "2000-01-01T00:00:00.000Z");
+        let data_date = SprintProgressData::from_sprint(&[], "2000-01-01");
+        assert_eq!(
+            data_ts.working_days_remaining, data_date.working_days_remaining,
+            "timestamp and date-only formats should yield the same working-day count"
+        );
     }
 }
