@@ -17,7 +17,7 @@ use std::thread;
 // ── Internal channel message ─────────────────────────────────────────────────
 
 enum LoadMsg {
-    SprintRefreshed(Vec<Pbi>, String), // pbis, sprint_end_date
+    SprintRefreshed(Vec<Pbi>), // pbis, sprint_end_date
     SprintError(String),
 }
 
@@ -26,8 +26,6 @@ enum LoadMsg {
 /// Carries the result of a completed background refresh for `SprintApp` to act on.
 pub struct LoadUpdate {
     pub status: String,
-    /// Non-empty when the refresh returned an updated sprint end date.
-    pub new_end_date: Option<String>,
 }
 
 /// Actions that `SprintTable::handle_key` returns to the coordinator (`SprintApp`).
@@ -43,8 +41,6 @@ pub enum TableAction {
     ClearStatus,
     /// PBI data changed; the caller should persist the cache.
     SaveCache,
-    /// A full refresh produced a new sprint end date for `ProgressBlock`.
-    UpdateEndDate(String),
 }
 
 // ── Internal mode ────────────────────────────────────────────────────────────
@@ -112,7 +108,7 @@ impl SprintTable {
         thread::spawn(
             move || match sprint::fetch_active_sprint_issues(&board_id) {
                 Ok(sprint) => {
-                    let _ = tx.send(LoadMsg::SprintRefreshed(sprint.pbis, sprint.end_date));
+                    let _ = tx.send(LoadMsg::SprintRefreshed(sprint.pbis));
                 }
                 Err(e) => {
                     let _ = tx.send(LoadMsg::SprintError(e.to_string()));
@@ -139,21 +135,15 @@ impl SprintTable {
         self.load_rx = None; // channel done
 
         Some(match msg {
-            LoadMsg::SprintRefreshed(pbis, end_date) => {
+            LoadMsg::SprintRefreshed(pbis) => {
                 let count = pbis.len();
                 self.pbis = pbis;
                 LoadUpdate {
                     status: format!("Refreshed — {count} issues loaded"),
-                    new_end_date: if end_date.is_empty() {
-                        None
-                    } else {
-                        Some(end_date)
-                    },
                 }
             }
             LoadMsg::SprintError(e) => LoadUpdate {
                 status: format!("Error refreshing sprint: {e}"),
-                new_end_date: None,
             },
         })
     }

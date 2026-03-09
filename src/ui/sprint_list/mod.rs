@@ -28,8 +28,6 @@ pub struct SprintApp {
     progress: ProgressBlock,
     footer: Footer,
     board_id: String,
-    /// Owned here so `ProgressBlock` stays stateless; mapped into
-    /// `SprintProgressData` at draw time.
     sprint_end_date: String,
     exit: bool,
 }
@@ -71,9 +69,6 @@ impl SprintApp {
     fn process_background_messages(&mut self) {
         if let Some(update) = self.table.process_messages() {
             self.footer.set_status(update.status);
-            if let Some(date) = update.new_end_date {
-                self.sprint_end_date = date;
-            }
             self.save_cache();
         }
     }
@@ -137,7 +132,6 @@ impl SprintApp {
             TableAction::SetStatus(msg) => self.footer.set_status(msg),
             TableAction::ClearStatus => self.footer.clear_status(),
             TableAction::SaveCache => self.save_cache(),
-            TableAction::UpdateEndDate(date) => self.sprint_end_date = date,
         }
     }
 }
