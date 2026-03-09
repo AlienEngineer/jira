@@ -81,13 +81,15 @@ impl SprintApp {
     // ── Cache persistence ─────────────────────────────────────────────────────
 
     fn save_cache(&self) {
-        let sprint = Sprint {
-            name: self.goal.sprint_name.to_string(),
-            goal: self.goal.sprint_goal.to_string(),
-            end_date: self.sprint_end_date.to_string(),
-            pbis: self.table.pbis().to_vec(),
-        };
-        sprint::save_sprint_cache(&self.board_id, &sprint);
+        sprint::save_sprint_cache(
+            &self.board_id,
+            &Sprint {
+                name: self.goal.sprint_name.to_string(),
+                goal: self.goal.sprint_goal.to_string(),
+                end_date: self.sprint_end_date.to_string(),
+                pbis: self.table.pbis().to_vec(),
+            },
+        );
     }
 
     // ── Layout & rendering ────────────────────────────────────────────────────
