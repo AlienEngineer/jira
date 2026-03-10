@@ -8,7 +8,7 @@ use progress_block::{ProgressBlock, SprintProgressData};
 use sprint_goal::SprintGoalWidget;
 use sprint_table::{SprintTable, TableAction};
 
-use crate::jira::sprint::{self, Pbi, Sprint};
+use crate::jira::sprint::{self, Sprint};
 use crossterm::event::{self, Event, KeyEventKind};
 use ratatui::layout::{Constraint, Layout};
 use std::time::Duration;
@@ -33,21 +33,14 @@ pub struct SprintApp {
 }
 
 impl SprintApp {
-    // TODO: use Sprint struct instead of all of these fields.
-    pub fn new(
-        sprint_name: String,
-        sprint_goal: String,
-        sprint_end_date: String,
-        board_id: String,
-        pbis: Vec<Pbi>,
-    ) -> Self {
+    pub fn new(sprint: Sprint) -> Self {
         Self {
-            goal: SprintGoalWidget::new(sprint_name, sprint_goal),
-            table: SprintTable::new(board_id.clone(), pbis),
+            goal: SprintGoalWidget::new(sprint.name, sprint.goal),
+            table: SprintTable::new(sprint.board_id.clone(), sprint.pbis),
             progress: ProgressBlock::new(),
             footer: Footer::new(),
-            board_id,
-            sprint_end_date,
+            board_id: sprint.board_id,
+            sprint_end_date: sprint.end_date,
             exit: false,
         }
     }

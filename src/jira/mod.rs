@@ -107,14 +107,7 @@ pub fn handle_sprint(_matches: &ArgMatches) {
     };
 
     let mut terminal = ratatui::init();
-    let result = SprintApp::new(
-        sprint.name,
-        sprint.goal,
-        sprint.end_date,
-        board_id,
-        sprint.pbis,
-    )
-    .run(&mut terminal);
+    let result = SprintApp::new(sprint).run(&mut terminal);
     ratatui::restore();
     if let Err(e) = result {
         eprintln!("TUI error: {e}");

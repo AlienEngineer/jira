@@ -35,15 +35,14 @@ impl SprintProgressData {
                 s.contains("closed") || s.contains("resolved")
             })
             .count();
-        let working_days_remaining = Self::compute_working_days(end_date);
         Self {
             resolved,
             total,
-            working_days_remaining,
+            working_days_remaining: Self::compute_working_days(end_date),
         }
     }
 
-    fn fun_name(end: chrono::NaiveDate, today: chrono::NaiveDate) -> Option<i64> {
+    fn count_working_days(end: chrono::NaiveDate, today: chrono::NaiveDate) -> Option<i64> {
         use chrono::{Datelike, Weekday};
         let mut count = 0i64;
         let mut d = today;
@@ -72,7 +71,7 @@ impl SprintProgressData {
         if today > end {
             return Some(0);
         }
-        Self::fun_name(end, today)
+        Self::count_working_days(end, today)
     }
 }
 
@@ -282,27 +281,6 @@ mod tests {
         let data = SprintProgressData::from_sprint(&pbis, "");
         assert_eq!(data.total, 3);
         assert_eq!(data.resolved, 0);
-    }
-
-    // ── from_sprint: end_date pass-through ───────────────────────────────────
-
-    #[test]
-    fn end_date_is_preserved() {
-        let data = SprintProgressData::from_sprint(&[], "2026-03-20");
-        assert_eq!(data.end_date, "2026-03-20");
-    }
-
-    #[test]
-    fn empty_end_date_is_preserved() {
-        let data = SprintProgressData::from_sprint(&[], "");
-        assert_eq!(data.end_date, "");
-    }
-
-    #[test]
-    fn full_iso_timestamp_end_date_is_preserved() {
-        // The mapping stores the string as-is; the renderer trims to 10 chars.
-        let data = SprintProgressData::from_sprint(&[], "2026-03-20T00:00:00.000Z");
-        assert_eq!(data.end_date, "2026-03-20T00:00:00.000Z");
     }
 
     // ── working_days_remaining ────────────────────────────────────────────────
