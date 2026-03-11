@@ -9,6 +9,7 @@ mod new_issue;
 pub mod sprint;
 pub mod transitions;
 mod update;
+pub mod user;
 pub mod utils;
 
 extern crate clap;
@@ -87,6 +88,8 @@ pub fn handle_sprint(_matches: &ArgMatches) {
         );
         std::process::exit(1);
     }
+
+    config::ensure_account_id();
 
     // Try the on-disk cache first; fall back to a fresh API fetch
     let sprint = if let Some(cached) = sprint::load_sprint_cache(&board_id) {

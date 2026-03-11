@@ -27,20 +27,16 @@ pub struct SprintApp {
     table: SprintTable,
     progress: ProgressBlock,
     footer: Footer,
-    board_id: String,
-    sprint_end_date: String,
     exit: bool,
 }
 
 impl SprintApp {
     pub fn new(sprint: Sprint) -> Self {
         Self {
-            goal: SprintGoalWidget::new(sprint.name, sprint.goal),
-            table: SprintTable::new(sprint.board_id.clone(), sprint.pbis),
+            goal: SprintGoalWidget::new(sprint.name.clone(), sprint.goal.clone()),
+            table: SprintTable::new(sprint),
             progress: ProgressBlock::new(),
             footer: Footer::new(),
-            board_id: sprint.board_id,
-            sprint_end_date: sprint.end_date,
             exit: false,
         }
     }
@@ -73,9 +69,9 @@ impl SprintApp {
         sprint::save_sprint_cache(&Sprint {
             name: self.goal.sprint_name.to_string(),
             goal: self.goal.sprint_goal.to_string(),
-            end_date: self.sprint_end_date.to_string(),
+            end_date: self.table.sprint.end_date.clone(),
             pbis: self.table.pbis().to_vec(),
-            board_id: self.board_id.to_string(),
+            board_id: self.table.sprint.board_id.clone(),
         });
     }
 
@@ -99,7 +95,7 @@ impl SprintApp {
         self.table.render(frame, layout[2]);
 
         let progress_data =
-            SprintProgressData::from_sprint(self.table.pbis(), &self.sprint_end_date);
+            SprintProgressData::from_sprint(self.table.pbis(), &self.table.sprint.end_date);
         self.progress.render(frame, layout[3], &progress_data);
 
         self.footer.render(frame, layout[4]);

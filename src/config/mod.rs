@@ -1,11 +1,78 @@
+use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::io::Read;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use crate::jira;
 use crate::prelude::Result;
-mod cache;
+
+/// Typed representation of the JIRA configuration file.
+#[derive(Debug, Clone)]
+pub struct JiraConfig {
+    pub namespace: String,
+    pub email: String,
+    pub token: String,
+    pub auth_mode: String,
+    pub account_id: String,
+    pub board_id: Option<String>,
+    pub jira_version: Option<String>,
+    /// Alias map: short name → full status name.
+    pub alias: HashMap<String, String>,
+    /// Transitions map: project code → (transition name → transition ID).
+    pub transitions: HashMap<String, HashMap<String, i64>>,
+}
+
+impl JiraConfig {
+    /// Load and parse the configuration file into a [`JiraConfig`].
+    pub fn load() -> Result<JiraConfig> {
+        let raw = parse_config();
+        let mut alias = HashMap::new();
+        for (k, v) in raw["alias"].entries() {
+            if let Some(val) = v.as_str() {
+                alias.insert(k.to_string(), val.to_string());
+            }
+        }
+        let mut transitions: HashMap<String, HashMap<String, i64>> = HashMap::new();
+        for (project, mapping) in raw["transitions"].entries() {
+            let mut inner = HashMap::new();
+            for (name, id) in mapping.entries() {
+                if let Some(n) = id.as_i64() {
+                    inner.insert(name.to_string(), n);
+                }
+            }
+            transitions.insert(project.to_string(), inner);
+        }
+        Ok(JiraConfig {
+            namespace: raw["namespace"].as_str().unwrap_or("").to_string(),
+            email: raw["email"].as_str().unwrap_or("").to_string(),
+            token: raw["token"].as_str().unwrap_or("").to_string(),
+            auth_mode: raw["auth_mode"].as_str().unwrap_or("Basic").to_string(),
+            account_id: raw["account_id"].as_str().unwrap_or("").to_string(),
+            board_id: raw["board_id"].as_str().map(str::to_string),
+            jira_version: raw["jira-version"].as_str().map(str::to_string),
+            alias,
+            transitions,
+        })
+    }
+}
+
+impl Default for JiraConfig {
+    fn default() -> Self {
+        JiraConfig {
+            namespace: String::new(),
+            email: String::new(),
+            token: String::new(),
+            auth_mode: "Basic".to_string(),
+            account_id: String::new(),
+            board_id: None,
+            jira_version: None,
+            alias: std::collections::HashMap::new(),
+            transitions: std::collections::HashMap::new(),
+        }
+    }
+}
 
 /// Capitalize first letter of a word.
 pub fn str_cap(s: String) -> String {
@@ -68,15 +135,28 @@ fn migrate_config(old_path: &Path, new_path: &Path) {
     }
 }
 
-/// Check if the config file already exists.
-///
-/// # Example
-///
-/// ```
-/// assert!(check_config_exists());
-/// ```
+/// Check if the config file exists.
 fn check_config_exists() -> Result<bool> {
     Ok(fs::metadata(get_config_file_name()).is_ok())
+}
+
+/// Ensure `account_id` is populated in the config. If it is empty, attempt to
+/// fetch it via the API and persist it. Call this only in commands that actually
+/// need the account ID (e.g. sprint view, assign).
+pub fn ensure_account_id() {
+    let account_id = get_config("account_id".to_string());
+    if account_id.is_empty() {
+        match jira::user::fetch_current_account_id() {
+            Some(id) => {
+                println!("Fetched account_id automatically: {id}");
+                update_config("account_id".to_string(), id);
+            }
+            None => eprintln!(
+                "Warning: account_id is not set and could not be fetched automatically.\n\
+                 You can set it manually with: jira config account_id <your-id>"
+            ),
+        }
+    }
 }
 
 /// Create configuration file by asking user with the required information.
@@ -116,21 +196,17 @@ fn create_config() -> Result<()> {
         let b64 = base64::encode(user_password);
         (email.trim().to_string(), b64)
     };
+    let account_id = jira::user::fetch_current_account_id().unwrap_or_default();
 
-    let mut configuration = json::object! {
+    let configuration = json::object! {
         namespace: namespace.trim(),
         email: email.as_str(),
         token: token.as_str(),
         auth_mode: auth_mode,
-        account_id: "",
+        account_id: account_id,
         alias: {},
         transitions: {}
     };
-
-    if !use_bearer {
-        let account_id = cache::get_username(&configuration)?;
-        configuration["account_id"] = account_id.into();
-    }
 
     write_config(configuration);
     Ok(())

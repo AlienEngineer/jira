@@ -8,6 +8,7 @@ pub mod fields;
 pub mod list;
 pub mod logout;
 pub mod new_subcommand;
+pub mod plugin;
 pub mod sprint;
 pub mod transition;
 pub mod update;
@@ -63,6 +64,8 @@ pub fn handle_matches(mut app: App) {
         app.gen_completions_to("jira", shell, &mut io::stdout());
     } else if let Some(config_matches) = matches.subcommand_matches("config") {
         config::handle(config_matches);
+    } else if let Some(plugin_matches) = matches.subcommand_matches("plugin") {
+        plugin::handle(plugin_matches);
     } else if let Some(sprint_matches) = matches.subcommand_matches("sprint") {
         jira::handle_sprint(sprint_matches);
     } else {

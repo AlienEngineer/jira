@@ -22,7 +22,6 @@ pub struct Pbi {
     pub loaded: bool,
 }
 
-// TODO: eval if these fields really need to be String or can be &str
 #[derive(Debug, Clone)]
 pub struct Sprint {
     pub name: String,
