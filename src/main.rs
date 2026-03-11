@@ -30,6 +30,7 @@ fn main() -> prelude::Result<()> {
         .subcommand(subcommands::logout::subcommand())
         .subcommand(subcommands::config::subcommand())
         .subcommand(subcommands::sprint::subcommand())
+        .subcommand(subcommands::raw::subcommand())
         .subcommand(subcommands::plugin::subcommand());
     subcommands::handle_matches(app);
     Ok(())

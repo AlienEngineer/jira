@@ -6,6 +6,7 @@ mod fields;
 pub mod lists;
 mod logout;
 mod new_issue;
+pub mod raw;
 pub mod sprint;
 pub mod transitions;
 mod update;
@@ -116,4 +117,10 @@ pub fn handle_sprint(_matches: &ArgMatches) {
         eprintln!("TUI error: {e}");
         std::process::exit(1);
     }
+}
+
+pub fn handle_raw(matches: &ArgMatches) {
+    let ticket = String::from(matches.value_of("TICKET").unwrap());
+    let pretty = matches.is_present("pretty");
+    raw::print_raw(ticket, pretty);
 }

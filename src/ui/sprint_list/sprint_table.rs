@@ -1,4 +1,4 @@
-use crate::jira::sprint::{self, Pbi, Sprint};
+use crate::jira::sprint::{self, pbi_elapsed_display, Pbi, Sprint};
 use crate::plugins::lua_plugin::{execute_plugins, JiraContext};
 use crossterm::event::KeyCode;
 use ratatui::{
@@ -37,6 +37,8 @@ pub enum TableAction {
     ClearStatus,
     /// PBI data changed; the caller should persist the cache.
     SaveCache,
+    /// Open the detail view for the PBI at this index.
+    OpenDetail(usize),
 }
 
 // ── Internal mode ────────────────────────────────────────────────────────────
@@ -186,6 +188,31 @@ impl SprintTable {
         actions
     }
 
+    // ── Open in browser (o) ───────────────────────────────────────────────────
+
+    fn open_selected_in_browser(&self) -> Vec<TableAction> {
+        let Some(i) = self.table_state.selected() else {
+            return vec![];
+        };
+        let key = &self.sprint.pbis[i].key;
+        let config = crate::config::JiraConfig::load().unwrap_or_default();
+        let url = format!("{}/browse/{}", config.namespace, key);
+
+        let result = {
+            #[cfg(target_os = "macos")]
+            {
+                std::process::Command::new("open").arg(&url).status()
+            }
+        };
+
+        match result {
+            Ok(_) => vec![TableAction::SetStatus(format!("Opened {url}"))],
+            Err(e) => vec![TableAction::SetStatus(format!(
+                "Failed to open browser: {e}"
+            ))],
+        }
+    }
+
     // ── Start work (Enter) ────────────────────────────────────────────────────
 
     fn start_work_on_selected(&mut self) -> Vec<TableAction> {
@@ -230,6 +257,14 @@ impl SprintTable {
                     vec![TableAction::ClearStatus]
                 }
                 KeyCode::Char('f') => self.load_selected(),
+                KeyCode::Char('o') | KeyCode::Char('O') => self.open_selected_in_browser(),
+                KeyCode::Char('l') => {
+                    if let Some(i) = self.table_state.selected() {
+                        vec![TableAction::OpenDetail(i)]
+                    } else {
+                        vec![]
+                    }
+                }
                 KeyCode::Char('F') => {
                     if self.load_rx.is_none() {
                         self.start_load_all();
@@ -251,7 +286,7 @@ impl SprintTable {
     /// Render the table (and the branch-input popup when active).
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
         let header = Row::new(
-            ["", "Type", "Key", "Summary", "Status", "Assignee"]
+            ["", "Type", "Key", "Summary", "Status", "Assignee", "Age"]
                 .iter()
                 .map(|h| {
                     Cell::from(*h).style(
@@ -300,6 +335,8 @@ impl SprintTable {
                     Cell::from(pbi.summary.clone()),
                     Cell::from(pbi.status.clone()).style(status_style),
                     Cell::from(pbi.assignee.clone()),
+                    Cell::from(pbi_elapsed_display(pbi))
+                        .style(Style::default().fg(Color::DarkGray)),
                 ])
             })
             .collect();
@@ -313,6 +350,7 @@ impl SprintTable {
                 Constraint::Min(40),
                 Constraint::Length(18),
                 Constraint::Length(20),
+                Constraint::Length(5),
             ],
         )
         .header(header)

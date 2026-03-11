@@ -70,6 +70,12 @@ fn pbi_to_lua(lua: &Lua, pbi: &Pbi) -> crate::prelude::Result<mlua::Table> {
     tbl.set("priority", pbi.priority.clone())?;
     tbl.set("story_points", pbi.story_points)?;
     tbl.set("labels", pbi.labels.clone())?;
+    tbl.set("in_progress_at", pbi.in_progress_at.clone())?;
+    tbl.set("resolved_at", pbi.resolved_at.clone())?;
+    tbl.set(
+        "elapsed_minutes",
+        crate::jira::sprint::pbi_elapsed_minutes(pbi),
+    )?;
     Ok(tbl)
 }
 
@@ -140,6 +146,9 @@ const PLUGIN_TEMPLATE: &str = r#"-- Plugin name: {name}
 --   jira_context.selected_pbi.priority     -- e.g. "High" (may be nil)
 --   jira_context.selected_pbi.story_points -- number (may be nil)
 --   jira_context.selected_pbi.labels       -- array of label strings
+--   jira_context.selected_pbi.in_progress_at  -- ISO-8601 timestamp of last "In Progress" transition (may be nil)
+--   jira_context.selected_pbi.resolved_at     -- ISO-8601 resolution timestamp (may be nil)
+--   jira_context.selected_pbi.elapsed_minutes -- minutes since last "In Progress" (nil for new/open)
 
 local pbi = jira_context.selected_pbi
 if not pbi then

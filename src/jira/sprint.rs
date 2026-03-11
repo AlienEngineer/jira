@@ -1,6 +1,7 @@
 use crate::api::JsonValueExt;
 use crate::config;
 use crate::jira::api;
+use chrono::{DateTime, Utc};
 use std::error::Error;
 use std::fs;
 use std::io::{Read, Write};
@@ -20,6 +21,100 @@ pub struct Pbi {
     pub story_points: Option<f64>,
     pub labels: Vec<String>,
     pub loaded: bool,
+    // Timestamps (ISO-8601 strings from the Jira API)
+    pub in_progress_at: Option<String>,
+    pub resolved_at: Option<String>,
+}
+
+/// Parse a Jira ISO-8601 datetime string (e.g. "2026-03-01T10:30:00.000+0000").
+fn parse_jira_datetime(s: &str) -> Option<DateTime<Utc>> {
+    DateTime::parse_from_str(s, "%FT%T%.f%z")
+        .ok()
+        .map(|dt| dt.with_timezone(&Utc))
+}
+
+/// Scan a Jira changelog (the `changelog` node of an issue response fetched
+/// with `?expand=changelog`) and return the timestamp of the **last** time the
+/// issue was transitioned into any "in progress" status.
+pub fn last_in_progress_at(changelog: &json::JsonValue) -> Option<String> {
+    let mut last: Option<String> = None;
+    for history in changelog["histories"].members() {
+        for item in history["items"].members() {
+            if item["field"].as_str() == Some("status") {
+                let to = item["toString"].as_str().unwrap_or("").to_lowercase();
+                if to.contains("in progress") {
+                    if let Some(created) = history["created"].as_str() {
+                        last = Some(created.to_string());
+                    }
+                }
+            }
+        }
+    }
+    last
+}
+
+/// Return a human-readable elapsed duration for a PBI, or an empty string when
+/// the status is "new" or "open" (i.e. work has not started).
+///
+/// - < 60 min  → "Xm"
+/// - < 24 h    → "Xh"
+/// - ≥ 24 h    → "Xd"
+///
+/// The start time is when the PBI was **last moved to "In Progress"**
+/// (`in_progress_at`). For done/closed/resolved items the end time is
+/// `resolved_at` (falling back to now). For all other active statuses the
+/// end time is now. Returns an empty string when `in_progress_at` is absent.
+pub fn pbi_elapsed_display(pbi: &Pbi) -> String {
+    let s = pbi.status.to_lowercase();
+    if s == "new" || s == "open" {
+        return String::new();
+    }
+
+    let started = match pbi.in_progress_at.as_deref().and_then(parse_jira_datetime) {
+        Some(dt) => dt,
+        None => return String::new(),
+    };
+
+    let is_done = s.contains("done") || s.contains("closed") || s.contains("resolved");
+    let end = if is_done {
+        pbi.resolved_at
+            .as_deref()
+            .and_then(parse_jira_datetime)
+            .unwrap_or_else(Utc::now)
+    } else {
+        Utc::now()
+    };
+
+    let minutes = (end - started).num_minutes().max(0);
+    if minutes < 60 {
+        format!("{}m", minutes)
+    } else if minutes < 1440 {
+        format!("{}h", minutes / 60)
+    } else {
+        format!("{}d", minutes / 1440)
+    }
+}
+
+/// Return the total elapsed minutes for a PBI (used by the plugin system).
+pub fn pbi_elapsed_minutes(pbi: &Pbi) -> Option<i64> {
+    let s = pbi.status.to_lowercase();
+    if s == "new" || s == "open" {
+        return None;
+    }
+    let started = pbi
+        .in_progress_at
+        .as_deref()
+        .and_then(parse_jira_datetime)?;
+    let is_done = s.contains("done") || s.contains("closed") || s.contains("resolved");
+    let end = if is_done {
+        pbi.resolved_at
+            .as_deref()
+            .and_then(parse_jira_datetime)
+            .unwrap_or_else(Utc::now)
+    } else {
+        Utc::now()
+    };
+    Some((end - started).num_minutes().max(0))
 }
 
 #[derive(Debug, Clone)]
@@ -84,6 +179,8 @@ pub fn load_sprint_cache(board_id: &str) -> Option<Sprint> {
             story_points: item["story_points"].as_f64(),
             labels,
             loaded: item["loaded"].as_bool().unwrap_or(false),
+            in_progress_at: item["in_progress_at"].as_str().map(|s| s.to_string()),
+            resolved_at: item["resolved_at"].as_str().map(|s| s.to_string()),
         });
     }
 
@@ -142,6 +239,14 @@ fn convert_pbis_to_json(pbis: &[Pbi]) -> json::JsonValue {
             Some(sp) => json::JsonValue::Number(sp.into()),
             None => json::JsonValue::Null,
         };
+        obj["in_progress_at"] = match &pbi.in_progress_at {
+            Some(ts) => json::JsonValue::String(ts.clone()),
+            None => json::JsonValue::Null,
+        };
+        obj["resolved_at"] = match &pbi.resolved_at {
+            Some(ts) => json::JsonValue::String(ts.clone()),
+            None => json::JsonValue::Null,
+        };
         let _ = pbis_json.push(obj);
     }
     pbis_json
@@ -176,7 +281,9 @@ pub fn fetch_active_sprint_issues(board_id: &str) -> Result<Sprint, Box<dyn Erro
 }
 
 fn fetch_sprint_pbis(sprint_id: u64) -> Result<Vec<Pbi>, Box<dyn Error + 'static>> {
-    let issues_response = api::get_agile_call(format!("sprint/{sprint_id}/issue?maxResults=500"))?;
+    let issues_response = api::get_agile_call(format!(
+        "sprint/{sprint_id}/issue?maxResults=500&expand=changelog"
+    ))?;
     let issues = &issues_response["issues"];
     let mut pbis = Vec::new();
     if issues.is_array() {
@@ -188,11 +295,13 @@ fn fetch_sprint_pbis(sprint_id: u64) -> Result<Vec<Pbi>, Box<dyn Error + 'static
                 status: fields["status"]["name"].as_string_or("-"),
                 assignee: fields["assignee"]["displayName"].as_string_or("Unassigned"),
                 issue_type: fields["issuetype"]["name"].as_string_or("-"),
-                description: None,
-                priority: None,
-                story_points: None,
+                description: fields["description"].as_str().map(|s| s.to_string()),
+                priority: fields["priority"]["name"].as_str().map(|s| s.to_string()),
+                story_points: extract_story_points(fields),
                 labels: Vec::new(),
                 loaded: false,
+                in_progress_at: last_in_progress_at(&issue["changelog"]),
+                resolved_at: fields["resolutiondate"].as_str().map(|s| s.to_string()),
             });
         }
     }
@@ -200,9 +309,20 @@ fn fetch_sprint_pbis(sprint_id: u64) -> Result<Vec<Pbi>, Box<dyn Error + 'static
     Ok(pbis)
 }
 
-/// Fetch and populate rich details for a single PBI in place.
+/// Extract the story-points value from a Jira `fields` object.
+///
+/// Resolution order:
+/// 1. `fields["story_points"]`  — standard name
+/// 2. The field named by the `story_points` alias in the config (e.g. `"customfield_10006"`)
+/// 3. Hardcoded common custom-field fallbacks
+fn extract_story_points(fields: &json::JsonValue) -> Option<f64> {
+    fields["story_points"].as_f64().or_else(|| {
+        let alias_field = crate::config::get_alias("story_points".to_string())?;
+        fields[alias_field.as_str()].as_f64()
+    })
+}
 pub fn fetch_pbi_details(pbi: &mut Pbi) -> Result<(), Box<dyn Error>> {
-    let response = api::get_call_v2(format!("issue/{}", pbi.key))?;
+    let response = api::get_call_v2(format!("issue/{}?expand=changelog", pbi.key))?;
     let fields = &response["fields"];
 
     // Description: v2 returns plain text or ADF; try string first
@@ -217,11 +337,8 @@ pub fn fetch_pbi_details(pbi: &mut Pbi) -> Result<(), Box<dyn Error>> {
 
     pbi.priority = fields["priority"]["name"].as_str().map(|s| s.to_string());
 
-    // Story points live in different custom fields depending on the JIRA setup
-    pbi.story_points = fields["story_points"]
-        .as_f64()
-        .or_else(|| fields["customfield_10016"].as_f64())
-        .or_else(|| fields["customfield_10028"].as_f64());
+    // Story points: try standard name first, then the configured alias
+    pbi.story_points = extract_story_points(fields);
 
     pbi.labels = fields["labels"]
         .members()
@@ -235,6 +352,8 @@ pub fn fetch_pbi_details(pbi: &mut Pbi) -> Result<(), Box<dyn Error>> {
     if let Some(a) = fields["assignee"]["displayName"].as_str() {
         pbi.assignee = a.to_string();
     }
+    pbi.in_progress_at = last_in_progress_at(&response["changelog"]);
+    pbi.resolved_at = fields["resolutiondate"].as_str().map(|s| s.to_string());
 
     pbi.loaded = true;
     Ok(())
