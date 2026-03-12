@@ -59,24 +59,24 @@ macro_rules! get_instance {
     };
 }
 
-struct Ioc {
+pub struct Ioc {
     services: RwLock<HashMap<TypeId, Service>>,
     factories: HashMap<TypeId, Factory>,
 }
 
 impl Ioc {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             services: RwLock::new(HashMap::new()),
             factories: HashMap::new(),
         }
     }
 
-    fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.factories.is_empty() && self.services.read().unwrap().is_empty()
     }
 
-    fn register<I, F>(&mut self, factory: F)
+    pub fn register<I, F>(&mut self, factory: F)
     where
         I: ?Sized + Interface + 'static,
         F: Fn(&Ioc) -> Arc<I> + Send + Sync + 'static,
@@ -87,7 +87,7 @@ impl Ioc {
         );
     }
 
-    fn get<I>(&self) -> Option<Arc<I>>
+    pub fn get<I>(&self) -> Option<Arc<I>>
     where
         I: ?Sized + Interface + 'static,
     {
@@ -111,6 +111,12 @@ impl Ioc {
         let service = services.entry(type_id).or_insert(service);
 
         service.downcast_ref::<Arc<I>>().cloned()
+    }
+}
+
+impl Default for Ioc {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
