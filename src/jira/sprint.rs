@@ -298,7 +298,10 @@ fn fetch_sprint_pbis(sprint_id: u64) -> Result<Vec<Pbi>, Box<dyn Error + 'static
                 description: fields["description"].as_str().map(|s| s.to_string()),
                 priority: fields["priority"]["name"].as_str().map(|s| s.to_string()),
                 story_points: extract_story_points(fields),
-                labels: Vec::new(),
+                labels: fields["labels"]
+                    .members()
+                    .filter_map(|l| l.as_str().map(|s| s.to_string()))
+                    .collect(),
                 loaded: false,
                 in_progress_at: last_in_progress_at(&issue["changelog"]),
                 resolved_at: fields["resolutiondate"].as_str().map(|s| s.to_string()),

@@ -38,7 +38,9 @@ pub enum TableAction {
     /// PBI data changed; the caller should persist the cache.
     SaveCache,
     /// Open the detail view for the PBI at this index.
-    OpenDetail(usize),
+    OpenDetail(Box<Pbi>),
+    /// Open the plugin list view.
+    OpenPlugins,
 }
 
 // ── Internal mode ────────────────────────────────────────────────────────────
@@ -191,12 +193,9 @@ impl SprintTable {
     // ── Open in browser (o) ───────────────────────────────────────────────────
 
     fn open_selected_in_browser(&self) -> Vec<TableAction> {
-        let Some(i) = self.table_state.selected() else {
-            return vec![];
-        };
-        let key = &self.sprint.pbis[i].key;
+        let pbi = self.get_selected_pbi();
         let config = crate::config::JiraConfig::load().unwrap_or_default();
-        let url = format!("{}/browse/{}", config.namespace, key);
+        let url = format!("{}/browse/{}", config.namespace, pbi.key);
 
         let result = {
             #[cfg(target_os = "macos")]
@@ -213,20 +212,18 @@ impl SprintTable {
         }
     }
 
+    fn get_selected_pbi(&self) -> &Pbi {
+        &self.sprint.pbis[self.table_state.selected().unwrap_or_default()]
+    }
+
     // ── Start work (Enter) ────────────────────────────────────────────────────
 
     fn start_work_on_selected(&mut self) -> Vec<TableAction> {
-        let Some(i) = self.table_state.selected() else {
-            return vec![];
-        };
-
-        // Run Lua plugins with the selected PBI as context, pushing a
-        // SetStatus action for each plugin result as it arrives.
         let mut actions: Vec<TableAction> = Vec::new();
         let ctx = JiraContext {
             config: crate::config::JiraConfig::load().unwrap_or_default(),
             sprint: self.sprint.clone(),
-            selected_pbi: Some(self.sprint.pbis[i].clone()),
+            selected_pbi: self.get_selected_pbi().clone(),
         };
         if let Err(e) = execute_plugins(&ctx, |result| match result {
             Ok(msg) => actions.push(TableAction::SetStatus(msg)),
@@ -241,13 +238,9 @@ impl SprintTable {
 
     // ── Key handling ──────────────────────────────────────────────────────────
 
-    /// Process a key press and return any [`TableAction`]s for `SprintApp`.
-    pub fn handle_key(&mut self, key: KeyCode) -> Vec<TableAction> {
+    fn handle_key_with_selection(&mut self, key: KeyCode) -> Vec<TableAction> {
         match self.mode {
             TableMode::Normal => match key {
-                KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => {
-                    vec![TableAction::Exit]
-                }
                 KeyCode::Down | KeyCode::Char('j') => {
                     self.navigate_down();
                     vec![TableAction::ClearStatus]
@@ -258,13 +251,24 @@ impl SprintTable {
                 }
                 KeyCode::Char('f') => self.load_selected(),
                 KeyCode::Char('o') | KeyCode::Char('O') => self.open_selected_in_browser(),
-                KeyCode::Char('l') => {
-                    if let Some(i) = self.table_state.selected() {
-                        vec![TableAction::OpenDetail(i)]
-                    } else {
-                        vec![]
-                    }
+                KeyCode::Right | KeyCode::Char('l') => {
+                    vec![TableAction::OpenDetail(Box::new(
+                        self.get_selected_pbi().clone(),
+                    ))]
                 }
+                KeyCode::Enter => self.start_work_on_selected(),
+                _ => self.handle_key_without_selection(key),
+            },
+        }
+    }
+
+    fn handle_key_without_selection(&mut self, key: KeyCode) -> Vec<TableAction> {
+        match self.mode {
+            TableMode::Normal => match key {
+                KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => {
+                    vec![TableAction::Exit]
+                }
+                KeyCode::Char('p') | KeyCode::Char('P') => vec![TableAction::OpenPlugins],
                 KeyCode::Char('F') => {
                     if self.load_rx.is_none() {
                         self.start_load_all();
@@ -275,9 +279,17 @@ impl SprintTable {
                         vec![]
                     }
                 }
-                KeyCode::Enter => self.start_work_on_selected(),
                 _ => vec![],
             },
+        }
+    }
+
+    /// Process a key press and return any [`TableAction`]s for `SprintApp`.
+    pub fn handle_key(&mut self, key: KeyCode) -> Vec<TableAction> {
+        if self.table_state.selected().is_some() {
+            self.handle_key_with_selection(key)
+        } else {
+            self.handle_key_without_selection(key)
         }
     }
 

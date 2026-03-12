@@ -8,18 +8,20 @@ use progress_block::{ProgressBlock, SprintProgressData};
 use sprint_goal::SprintGoalWidget;
 use sprint_table::{SprintTable, TableAction};
 
-use crate::config::JiraConfig;
 use crate::jira::sprint::{self, Sprint};
 use crate::ui::pbi_detail::{PbiDetailAction, PbiDetailView};
+use crate::ui::plugin_list::{PluginListAction, PluginListView};
 use crossterm::event::{self, Event, KeyEventKind};
 use ratatui::layout::{Constraint, Layout};
+use std::path::PathBuf;
 use std::time::Duration;
 
 // ── Active view ───────────────────────────────────────────────────────────────
 
 enum ActiveView {
     Sprint,
-    PbiDetail(PbiDetailView),
+    PbiDetail(Box<PbiDetailView>),
+    PluginList(Box<PluginListView>),
 }
 
 /// Top-level coordinator that owns all sprint UI components and drives the
@@ -40,6 +42,8 @@ pub struct SprintApp {
     active_view: ActiveView,
     /// Key of a PBI whose raw JSON should be displayed on the next loop tick.
     pending_raw: Option<String>,
+    /// Path to a plugin file to open in the editor on the next loop tick.
+    pending_plugin_edit: Option<PathBuf>,
 }
 
 impl SprintApp {
@@ -52,6 +56,7 @@ impl SprintApp {
             exit: false,
             active_view: ActiveView::Sprint,
             pending_raw: None,
+            pending_plugin_edit: None,
         }
     }
 
@@ -65,6 +70,12 @@ impl SprintApp {
             if let Some(key) = self.pending_raw.take() {
                 ratatui::restore();
                 self.open_raw_in_editor(&key);
+                *terminal = ratatui::init();
+            }
+
+            if let Some(path) = self.pending_plugin_edit.take() {
+                ratatui::restore();
+                open_file_in_editor(&path);
                 *terminal = ratatui::init();
             }
 
@@ -102,9 +113,12 @@ impl SprintApp {
 
     fn draw(&mut self, frame: &mut ratatui::Frame) {
         let area = frame.area();
-        match &self.active_view {
+        match &mut self.active_view {
             ActiveView::PbiDetail(detail) => {
                 detail.render(frame, area);
+            }
+            ActiveView::PluginList(plugin_list) => {
+                plugin_list.render(frame, area);
             }
             ActiveView::Sprint => {
                 self.draw_sprint(frame, area);
@@ -142,6 +156,7 @@ impl SprintApp {
             if key.kind == KeyEventKind::Press {
                 match &mut self.active_view {
                     ActiveView::PbiDetail(_) => self.handle_detail_key(key.code),
+                    ActiveView::PluginList(_) => self.handle_plugin_list_key(key.code),
                     ActiveView::Sprint => {
                         for action in self.table.handle_key(key.code) {
                             self.dispatch(action);
@@ -165,6 +180,21 @@ impl SprintApp {
             }
             Some(PbiDetailAction::ShowRaw) => {
                 self.pending_raw = Some(detail.pbi.key.clone());
+            }
+            None => {}
+        }
+    }
+
+    fn handle_plugin_list_key(&mut self, key: crossterm::event::KeyCode) {
+        let ActiveView::PluginList(ref mut plugin_list) = self.active_view else {
+            return;
+        };
+        match plugin_list.handle_key(key) {
+            Some(PluginListAction::Back) => {
+                self.active_view = ActiveView::Sprint;
+            }
+            Some(PluginListAction::OpenEditor(path)) => {
+                self.pending_plugin_edit = Some(path);
             }
             None => {}
         }
@@ -205,11 +235,27 @@ impl SprintApp {
             TableAction::SetStatus(msg) => self.footer.set_status(msg),
             TableAction::ClearStatus => self.footer.clear_status(),
             TableAction::SaveCache => self.save_cache(),
-            TableAction::OpenDetail(idx) => {
-                let pbi = self.table.sprint.pbis[idx].clone();
-                let namespace = JiraConfig::load().unwrap_or_default().namespace;
-                self.active_view = ActiveView::PbiDetail(PbiDetailView::new(pbi, namespace));
+            TableAction::OpenDetail(selected_pbi) => {
+                self.active_view =
+                    ActiveView::PbiDetail(Box::new(PbiDetailView::new(*selected_pbi)));
+            }
+            TableAction::OpenPlugins => {
+                self.active_view =
+                    ActiveView::PluginList(Box::new(PluginListView::new()));
             }
         }
     }
+}
+
+// ── Free functions ────────────────────────────────────────────────────────────
+
+fn open_file_in_editor(path: &std::path::Path) {
+    let editor = std::env::var("VISUAL")
+        .or_else(|_| std::env::var("EDITOR"))
+        .unwrap_or_else(|_| "vi".to_string());
+
+    let _ = std::process::Command::new(&editor)
+        .arg(path)
+        .status()
+        .map_err(|e| eprintln!("Failed to open editor '{editor}': {e}"));
 }

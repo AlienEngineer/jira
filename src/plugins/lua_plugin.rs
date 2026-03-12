@@ -11,7 +11,7 @@ struct JiraPlugin {
 pub struct JiraContext {
     pub config: JiraConfig,
     pub sprint: Sprint,
-    pub selected_pbi: Option<Pbi>,
+    pub selected_pbi: Pbi,
 }
 
 /// Inject the full [`JiraContext`] as the `jira_context` global table.
@@ -48,12 +48,7 @@ fn inject_context(lua: &Lua, ctx: &JiraContext) -> crate::prelude::Result<()> {
     }
     sprint_tbl.set("pbis", pbis_tbl)?;
     root.set("sprint", sprint_tbl)?;
-
-    // selected_pbi
-    match &ctx.selected_pbi {
-        Some(pbi) => root.set("selected_pbi", pbi_to_lua(lua, pbi)?)?,
-        None => root.set("selected_pbi", mlua::Value::Nil)?,
-    }
+    root.set("selected_pbi", pbi_to_lua(lua, &ctx.selected_pbi)?)?;
 
     lua.globals().set("jira_context", root)?;
     Ok(())

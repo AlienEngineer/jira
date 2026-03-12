@@ -13,31 +13,21 @@ use ratatui::{
 // ── Actions ───────────────────────────────────────────────────────────────────
 
 pub enum PbiDetailAction {
-    /// Return to the sprint list.
     Back,
-    /// Suspend the TUI and print the raw Jira JSON for this PBI.
     ShowRaw,
 }
 
 // ── View ──────────────────────────────────────────────────────────────────────
 
-/// Full-screen detail view for a single PBI.
-///
-/// Responsibilities:
-/// - Rendering all available fields of the PBI
-/// - Scrolling the description with j/k or arrow keys
-/// - Emitting [`PbiDetailAction`]s for the coordinator to act on
 pub struct PbiDetailView {
     pub pbi: Pbi,
-    pub namespace: String,
     desc_scroll: u16,
 }
 
 impl PbiDetailView {
-    pub fn new(pbi: Pbi, namespace: String) -> Self {
+    pub fn new(pbi: Pbi) -> Self {
         Self {
             pbi,
-            namespace,
             desc_scroll: 0,
         }
     }
@@ -46,7 +36,7 @@ impl PbiDetailView {
 
     pub fn handle_key(&mut self, key: KeyCode) -> Option<PbiDetailAction> {
         match key {
-            KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => Some(PbiDetailAction::Back),
+            KeyCode::Left | KeyCode::Char('h') | KeyCode::Esc => Some(PbiDetailAction::Back),
             KeyCode::Char('r') | KeyCode::Char('R') => Some(PbiDetailAction::ShowRaw),
             KeyCode::Down | KeyCode::Char('j') => {
                 self.desc_scroll = self.desc_scroll.saturating_add(1);
@@ -66,7 +56,7 @@ impl PbiDetailView {
         // ┌──────────────────────────────────────────────────────┐
         // │  header bar (title + status + age)          1 line   │
         // │  metadata block (key info, labels, …)       7 lines  │
-        // │  description block                          rest      │
+        // │  description block                          rest     │
         // │  footer / key hints                         1 line   │
         // └──────────────────────────────────────────────────────┘
         let layout = Layout::vertical([
@@ -212,11 +202,6 @@ impl PbiDetailView {
                 Cell::from("Resolved").style(Style::default().fg(Color::Yellow)),
                 Cell::from(resolved).style(Style::default().fg(Color::Green)),
             ]),
-            Row::new(vec![
-                Cell::from("URL").style(Style::default().fg(Color::Yellow)),
-                Cell::from(format!("{}/browse/{}", self.namespace, self.pbi.key))
-                    .style(Style::default().fg(Color::DarkGray)),
-            ]),
         ];
 
         frame.render_widget(
@@ -287,7 +272,7 @@ impl PbiDetailView {
         frame.render_widget(
             Line::from(vec![
                 Span::raw(" "),
-                Span::styled("q", Style::default().fg(Color::Yellow).bold()),
+                Span::styled("h", Style::default().fg(Color::Yellow).bold()),
                 Span::raw(" Back  "),
                 Span::styled("j/k", Style::default().fg(Color::Yellow).bold()),
                 Span::raw(" Scroll  "),
