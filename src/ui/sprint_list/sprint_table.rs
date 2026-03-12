@@ -202,9 +202,10 @@ impl SprintTable {
         #[cfg(target_os = "linux")]
         let result = std::process::Command::new("xdg-open").arg(&url).status();
         #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-        let result: Result<std::process::ExitStatus, std::io::Error> = Err(
-            std::io::Error::new(std::io::ErrorKind::Unsupported, "unsupported platform"),
-        );
+        let result: Result<std::process::ExitStatus, std::io::Error> = Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "unsupported platform",
+        ));
 
         match result {
             Ok(_) => vec![TableAction::SetStatus(format!("Opened {url}"))],
