@@ -162,6 +162,8 @@ mod tests {
             priority: None,
             story_points: None,
             labels: vec![],
+            in_progress_at: None,
+            resolved_at: None,
             loaded: false,
         }
     }
