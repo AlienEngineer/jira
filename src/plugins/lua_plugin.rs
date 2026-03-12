@@ -253,7 +253,8 @@ mod tests {
     #[test]
     fn skips_existing_plugin_files() {
         let dir = make_temp_dir("skip-existing");
-        fs::write(dir.join("start_alpha.lua"), "original").expect("existing plugin should be written");
+        fs::write(dir.join("start_alpha.lua"), "original")
+            .expect("existing plugin should be written");
 
         let result = install_plugin_files(
             vec![
