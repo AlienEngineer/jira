@@ -7,6 +7,18 @@ use std::fs;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
+pub trait JiraGateway {
+    fn get_agile(&self, endpoint: &str) -> Result<json::JsonValue, Box<dyn Error>>;
+}
+
+struct JiraRequest;
+
+impl JiraGateway for JiraRequest {
+    fn get_agile(&self, endpoint: &str) -> Result<json::JsonValue, Box<dyn Error>> {
+        api::get_agile_call(endpoint.to_string())
+    }
+}
+
 /// A single Product Backlog Item (PBI) from a sprint.
 #[derive(Debug, Clone)]
 pub struct Pbi {
@@ -260,8 +272,14 @@ fn convert_pbis_to_json(pbis: &[Pbi]) -> json::JsonValue {
 /// `sprint_end_date` is an ISO-8601 date string (e.g. "2026-03-20") or empty
 /// when the field is absent.
 pub fn fetch_active_sprint_issues(board_id: &str) -> Result<Sprint, Box<dyn Error>> {
-    let board_id: &str = board_id;
-    let sprints_response = api::get_agile_call(format!("board/{board_id}/sprint?state=active"))?;
+    fetch_active_sprint_issues_with_client(&JiraRequest, board_id)
+}
+
+fn fetch_active_sprint_issues_with_client(
+    gateway: &impl JiraGateway,
+    board_id: &str,
+) -> Result<Sprint, Box<dyn Error>> {
+    let sprints_response = gateway.get_agile(&format!("board/{board_id}/sprint?state=active"))?;
     let sprints = &sprints_response["values"];
     if !sprints.is_array() || sprints.is_empty() {
         return Err("No active sprint found for the given board.".into());
@@ -275,13 +293,16 @@ pub fn fetch_active_sprint_issues(board_id: &str) -> Result<Sprint, Box<dyn Erro
             .as_str()
             .map(|s| s.chars().take(10).collect::<String>())
             .unwrap_or_default(),
-        pbis: fetch_sprint_pbis(sprint_id)?,
+        pbis: fetch_sprint_pbis_with_client(gateway, sprint_id)?,
         board_id: board_id.to_string(),
     })
 }
 
-fn fetch_sprint_pbis(sprint_id: u64) -> Result<Vec<Pbi>, Box<dyn Error + 'static>> {
-    let issues_response = api::get_agile_call(format!(
+fn fetch_sprint_pbis_with_client(
+    gateway: &impl JiraGateway,
+    sprint_id: u64,
+) -> Result<Vec<Pbi>, Box<dyn Error + 'static>> {
+    let issues_response = gateway.get_agile(&format!(
         "sprint/{sprint_id}/issue?maxResults=500&expand=changelog"
     ))?;
     let issues = &issues_response["issues"];
@@ -378,4 +399,157 @@ fn extract_adf_text(node: &json::JsonValue) -> String {
         }
     }
     text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use std::io;
+
+    struct JiraFakeGateway {
+        responses: HashMap<String, json::JsonValue>,
+    }
+
+    impl JiraFakeGateway {
+        fn new(responses: HashMap<String, json::JsonValue>) -> Self {
+            Self { responses }
+        }
+    }
+
+    impl JiraGateway for JiraFakeGateway {
+        fn get_agile(&self, endpoint: &str) -> Result<json::JsonValue, Box<dyn Error>> {
+            self.responses.get(endpoint).cloned().ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!("missing fake Jira response for endpoint '{endpoint}'"),
+                )
+                .into()
+            })
+        }
+    }
+
+    fn active_sprint_response() -> json::JsonValue {
+        json::object! {
+            "values": [
+                {
+                    "id": 42,
+                    "name": "Platform Sprint",
+                    "goal": "Ship the sprint fetch refactor",
+                    "endDate": "2026-03-20T10:30:00.000Z"
+                }
+            ]
+        }
+    }
+
+    fn sprint_issues_response() -> json::JsonValue {
+        json::object! {
+            "issues": [
+                {
+                    "key": "JIRA-2",
+                    "fields": {
+                        "summary": "Blocked item",
+                        "status": { "name": "Blocked" },
+                        "assignee": { "displayName": "Taylor" },
+                        "issuetype": { "name": "Bug" },
+                        "description": "Needs input",
+                        "priority": { "name": "High" },
+                        "story_points": 5.0,
+                        "labels": ["backend", "urgent"],
+                        "resolutiondate": null
+                    },
+                    "changelog": {
+                        "histories": []
+                    }
+                },
+                {
+                    "key": "JIRA-1",
+                    "fields": {
+                        "summary": "Closed item",
+                        "status": { "name": "Closed" },
+                        "assignee": { "displayName": "Alex" },
+                        "issuetype": { "name": "Story" },
+                        "description": "All done",
+                        "priority": { "name": "Medium" },
+                        "story_points": 3.0,
+                        "labels": ["frontend"],
+                        "resolutiondate": "2026-03-10T09:00:00.000+0000"
+                    },
+                    "changelog": {
+                        "histories": [
+                            {
+                                "created": "2026-03-09T09:00:00.000+0000",
+                                "items": [
+                                    {
+                                        "field": "status",
+                                        "toString": "In Progress"
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    }
+
+    fn make_gateway(responses: Vec<(&str, json::JsonValue)>) -> JiraFakeGateway {
+        JiraFakeGateway::new(
+            responses
+                .into_iter()
+                .map(|(endpoint, body)| (endpoint.to_string(), body))
+                .collect(),
+        )
+    }
+
+    // ── active sprint fetch ───────────────────────────────────────────────────
+
+    #[test]
+    fn fetch_active_sprint_issues_uses_fake_jira_responses() {
+        let client = make_gateway(vec![
+            ("board/7/sprint?state=active", active_sprint_response()),
+            (
+                "sprint/42/issue?maxResults=500&expand=changelog",
+                sprint_issues_response(),
+            ),
+        ]);
+
+        let sprint = fetch_active_sprint_issues_with_client(&client, "7")
+            .expect("expected fake Jira responses to build a sprint");
+
+        assert_eq!(sprint.name, "Platform Sprint");
+        assert_eq!(sprint.goal, "Ship the sprint fetch refactor");
+        assert_eq!(sprint.end_date, "2026-03-20");
+        assert_eq!(sprint.board_id, "7");
+        assert_eq!(sprint.pbis.len(), 2);
+        assert_eq!(
+            sprint.pbis[0].key, "JIRA-2",
+            "blocked items should remain ahead of closed ones after sorting"
+        );
+        assert_eq!(sprint.pbis[0].labels, vec!["backend", "urgent"]);
+        assert_eq!(sprint.pbis[1].key, "JIRA-1");
+        assert_eq!(sprint.pbis[1].story_points, Some(3.0));
+        assert_eq!(
+            sprint.pbis[1].in_progress_at.as_deref(),
+            Some("2026-03-09T09:00:00.000+0000")
+        );
+    }
+
+    #[test]
+    fn fetch_active_sprint_issues_without_active_sprint_returns_error() {
+        let client = make_gateway(vec![(
+            "board/7/sprint?state=active",
+            json::object! {
+                "values": []
+            },
+        )]);
+
+        let error = fetch_active_sprint_issues_with_client(&client, "7")
+            .expect_err("expected an error when the fake Jira response has no active sprint");
+
+        assert_eq!(
+            error.to_string(),
+            "No active sprint found for the given board."
+        );
+    }
 }

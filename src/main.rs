@@ -5,6 +5,7 @@ use clap::App;
 
 pub mod api;
 pub mod config;
+pub mod ioc;
 pub mod jira;
 pub mod plugins;
 pub mod prelude;
