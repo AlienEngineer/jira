@@ -8,7 +8,8 @@ use crate::jira::api;
 ///
 /// Returns `None` if the account ID cannot be determined.
 pub fn fetch_current_account_id() -> Option<String> {
-    let jql = "assignee+in+(currentUser())+OR+reporter+in+(currentUser())+OR+creator+in+(currentUser())";
+    let jql =
+        "assignee+in+(currentUser())+OR+reporter+in+(currentUser())+OR+creator+in+(currentUser())";
     let response = api::get_call_v3(format!("search?maxResults=1&jql={jql}")).ok()?;
 
     let fields = &response["issues"][0]["fields"];

@@ -39,7 +39,11 @@ fn show_config() {
             println!("{:<20} {}", "auth_mode:", c.auth_mode);
             println!("{:<20} {}", "account_id:", c.account_id);
             println!("{:<20} {}", "board_id:", c.board_id.unwrap_or_default());
-            println!("{:<20} {}", "jira_version:", c.jira_version.unwrap_or_default());
+            println!(
+                "{:<20} {}",
+                "jira_version:",
+                c.jira_version.unwrap_or_default()
+            );
             println!("{:<20} {}", "token:", mask_token(&c.token));
 
             if c.alias.is_empty() {
