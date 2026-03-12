@@ -240,8 +240,7 @@ impl SprintApp {
                     ActiveView::PbiDetail(Box::new(PbiDetailView::new(*selected_pbi)));
             }
             TableAction::OpenPlugins => {
-                self.active_view =
-                    ActiveView::PluginList(Box::new(PluginListView::new()));
+                self.active_view = ActiveView::PluginList(Box::default());
             }
         }
     }

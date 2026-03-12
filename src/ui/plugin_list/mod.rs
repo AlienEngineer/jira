@@ -156,6 +156,12 @@ impl PluginListView {
     }
 }
 
+impl Default for PluginListView {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn load_start_plugins() -> Vec<PathBuf> {
