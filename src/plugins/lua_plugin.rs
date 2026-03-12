@@ -1,6 +1,10 @@
 use crate::config::JiraConfig;
 use crate::jira::sprint::{Pbi, Sprint};
+use include_dir::{include_dir, Dir, DirEntry};
 use mlua::Lua;
+use std::path::{Path, PathBuf};
+
+static BUNDLED_PLUGINS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/plugins");
 
 #[derive(Debug, Clone)]
 struct JiraPlugin {
@@ -108,84 +112,67 @@ pub fn get_plugins_path() -> String {
     }
 }
 
-const PLUGIN_TEMPLATE: &str = r#"-- Plugin name: {name}
--- Triggered when starting work on a PBI (prefix with "start_" to enable this).
---
--- Full context reference (all fields available as jira_context.*):
---
--- CONFIG
---   jira_context.config.namespace      -- e.g. "mycompany.atlassian.net"
---   jira_context.config.email          -- authenticated user's email
---   jira_context.config.token          -- API token (handle with care)
---   jira_context.config.auth_mode      -- "Basic" or "Bearer"
---   jira_context.config.account_id     -- Jira account ID of the current user
---   jira_context.config.board_id       -- active board ID (string or nil)
---   jira_context.config.jira_version   -- "cloud" or "server" (or nil)
---   jira_context.config.alias          -- table: short name → full status name
---   jira_context.config.transitions    -- table: project → (name → id)
---
--- SPRINT
---   jira_context.sprint.name           -- sprint name
---   jira_context.sprint.goal           -- sprint goal text
---   jira_context.sprint.end_date       -- ISO-8601 end date string
---   jira_context.sprint.board_id       -- board ID this sprint belongs to
---   jira_context.sprint.pbis           -- array of all PBI tables (see below)
---
--- SELECTED PBI  (nil when none is selected)
---   jira_context.selected_pbi.key          -- e.g. "PROJ-123"
---   jira_context.selected_pbi.summary      -- issue title
---   jira_context.selected_pbi.status       -- e.g. "In Progress"
---   jira_context.selected_pbi.assignee     -- assignee display name
---   jira_context.selected_pbi.issue_type   -- e.g. "Story", "Bug"
---   jira_context.selected_pbi.description  -- full description (may be nil)
---   jira_context.selected_pbi.priority     -- e.g. "High" (may be nil)
---   jira_context.selected_pbi.story_points -- number (may be nil)
---   jira_context.selected_pbi.labels       -- array of label strings
---   jira_context.selected_pbi.in_progress_at  -- ISO-8601 timestamp of last "In Progress" transition (may be nil)
---   jira_context.selected_pbi.resolved_at     -- ISO-8601 resolution timestamp (may be nil)
---   jira_context.selected_pbi.elapsed_minutes -- minutes since last "In Progress" (nil for new/open)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PluginInstallSummary {
+    pub copied: usize,
+    pub skipped: usize,
+}
 
-local pbi = jira_context.selected_pbi
-if not pbi then
-    return "error: no PBI selected"
-end
-
--- TODO: implement your plugin logic here.
-return "ok"
-"#;
-
-/// Create a new plugin file from the template and open it in the default editor.
-pub fn create_plugin(name: &str) -> crate::prelude::Result<()> {
-    let name = if name.starts_with("start_") {
-        name.to_string()
-    } else {
-        format!("start_{name}")
-    };
-
-    let plugins_path = get_plugins_path();
-    std::fs::create_dir_all(&plugins_path)?;
-
-    let file_name = format!("{name}.lua");
-    let file_path = format!("{plugins_path}/{file_name}");
-
-    if std::path::Path::new(&file_path).exists() {
-        return Err(format!("Plugin already exists: {file_path}").into());
+fn bundled_plugin_files() -> Vec<(&'static str, &'static [u8])> {
+    fn collect(dir: &'static Dir<'static>, files: &mut Vec<(&'static str, &'static [u8])>) {
+        for entry in dir.entries() {
+            match entry {
+                DirEntry::Dir(child) => collect(child, files),
+                DirEntry::File(file) => {
+                    if let Some(name) = file.path().file_name().and_then(|name| name.to_str()) {
+                        if name.ends_with(".lua") {
+                            files.push((name, file.contents()));
+                        }
+                    }
+                }
+            }
+        }
     }
 
-    let content = PLUGIN_TEMPLATE.replace("{name}", &name);
-    std::fs::write(&file_path, content)?;
-    println!("Created plugin: {file_path}");
+    let mut files = Vec::new();
+    collect(&BUNDLED_PLUGINS, &mut files);
+    files.sort_by(|(left, _), (right, _)| left.cmp(right));
+    files
+}
 
-    let editor = std::env::var("VISUAL")
-        .or_else(|_| std::env::var("EDITOR"))
-        .unwrap_or_else(|_| "vi".to_string());
+fn install_plugin_files<I, N, C>(
+    plugin_files: I,
+    destination_dir: &Path,
+) -> crate::prelude::Result<PluginInstallSummary>
+where
+    I: IntoIterator<Item = (N, C)>,
+    N: AsRef<str>,
+    C: AsRef<[u8]>,
+{
+    std::fs::create_dir_all(destination_dir)?;
 
-    std::process::Command::new(&editor)
-        .arg(&file_path)
-        .status()
-        .map_err(|e| format!("Failed to open editor '{editor}': {e}"))?;
+    let mut summary = PluginInstallSummary {
+        copied: 0,
+        skipped: 0,
+    };
 
-    Ok(())
+    for (file_name, contents) in plugin_files {
+        let destination = destination_dir.join(file_name.as_ref());
+        if destination.exists() {
+            summary.skipped += 1;
+            continue;
+        }
+
+        std::fs::write(destination, contents.as_ref())?;
+        summary.copied += 1;
+    }
+
+    Ok(summary)
+}
+
+pub fn install_bundled_plugins() -> crate::prelude::Result<PluginInstallSummary> {
+    let destination_dir = PathBuf::from(get_plugins_path());
+    install_plugin_files(bundled_plugin_files(), &destination_dir)
 }
 
 /// Execute all Lua plugins found in `~/plugins/`, injecting the full
@@ -209,4 +196,90 @@ where
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{install_plugin_files, PluginInstallSummary};
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn make_temp_dir(test_name: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after unix epoch")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "jira-plugin-tests-{test_name}-{}-{unique}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&dir).expect("temp dir should be created");
+        dir
+    }
+
+    #[test]
+    fn installs_missing_plugin_files() {
+        let dir = make_temp_dir("install-missing");
+
+        let result = install_plugin_files(
+            vec![
+                ("start_alpha.lua", &b"alpha"[..]),
+                ("start_beta.lua", &b"beta"[..]),
+            ],
+            &dir,
+        )
+        .expect("plugin install should succeed");
+
+        assert_eq!(
+            result,
+            PluginInstallSummary {
+                copied: 2,
+                skipped: 0,
+            }
+        );
+        assert_eq!(
+            fs::read_to_string(dir.join("start_alpha.lua")).expect("alpha plugin should exist"),
+            "alpha"
+        );
+        assert_eq!(
+            fs::read_to_string(dir.join("start_beta.lua")).expect("beta plugin should exist"),
+            "beta"
+        );
+
+        fs::remove_dir_all(dir).expect("temp dir should be removed");
+    }
+
+    #[test]
+    fn skips_existing_plugin_files() {
+        let dir = make_temp_dir("skip-existing");
+        fs::write(dir.join("start_alpha.lua"), "original").expect("existing plugin should be written");
+
+        let result = install_plugin_files(
+            vec![
+                ("start_alpha.lua", &b"updated"[..]),
+                ("start_beta.lua", &b"beta"[..]),
+            ],
+            &dir,
+        )
+        .expect("plugin install should succeed");
+
+        assert_eq!(
+            result,
+            PluginInstallSummary {
+                copied: 1,
+                skipped: 1,
+            }
+        );
+        assert_eq!(
+            fs::read_to_string(dir.join("start_alpha.lua")).expect("existing plugin should remain"),
+            "original"
+        );
+        assert_eq!(
+            fs::read_to_string(dir.join("start_beta.lua")).expect("new plugin should exist"),
+            "beta"
+        );
+
+        fs::remove_dir_all(dir).expect("temp dir should be removed");
+    }
 }

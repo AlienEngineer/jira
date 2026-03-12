@@ -51,6 +51,7 @@ jira help new
 jira help assign
 jira help comment
 jira help autocompletion
+jira help plugin
 ```
 
 ```
@@ -75,6 +76,7 @@ SUBCOMMANDS:
     help              Prints this message or the help of the given subcommand(s)
     list              List the issues from JIRA.
     new               Create a new ticket.
+    plugin            Manage Lua plugins.
     transition        Transition of ticket across status.
     update            Update a field for a ticket
     logout            Erase configuration and log out of Jira
@@ -181,6 +183,16 @@ Sample usage:
 - `jira alias -l`
 - `jira alias alias_name -a "Alias Value"`
 - `jira alias -r alias_name`
+
+### Plugins
+
+Install the bundled Lua plugins into your local plugins directory (`~/plugins`):
+
+```bash
+jira plugin generate
+```
+
+For compatibility, `jira plugin new` also works.
 
 ### Detail
 
