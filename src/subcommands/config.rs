@@ -1,4 +1,6 @@
+use crate::config::{update_config, JiraConfig};
 use clap::{App, Arg, SubCommand};
+use std::process;
 
 /// Configure user-specific settings for this CLI.
 /// For example, use `jira-version` to set the Jira API version used for requests.
@@ -30,7 +32,7 @@ fn parse_jira_version(value: &str) -> Option<&'static str> {
 }
 
 fn show_config() {
-    let config = crate::config::JiraConfig::load();
+    let config = JiraConfig::load();
     match config {
         Err(e) => eprintln!("Failed to load configuration: {e}"),
         Ok(c) => {
@@ -101,29 +103,29 @@ pub fn handle(matches: &clap::ArgMatches) {
         Some(v) => v,
         None => {
             eprintln!("VALUE is required when setting a config key.");
-            std::process::exit(1);
+            process::exit(1);
         }
     };
 
     match key {
         "jira-version" => match parse_jira_version(value) {
             Some(version) => {
-                crate::config::update_config("version".to_string(), version.to_string());
+                update_config("version".to_string(), version.to_string());
                 println!("Jira API version set to {version}.");
             }
             None => {
                 eprintln!("Invalid jira-version '{value}'. Accepted values: 2, v2, 3, v3.");
-                std::process::exit(1);
+                process::exit(1);
             }
         },
         "board-id" => {
-            crate::config::update_config("board-id".to_string(), value.to_string());
+            update_config("board-id".to_string(), value.to_string());
             println!("Board id updated to {value}");
             println!("Now you can list your current sprint using 'jira sprint'!");
         }
         _ => {
             eprintln!("Unknown config key '{key}'.");
-            std::process::exit(1);
+            process::exit(1);
         }
     }
 }

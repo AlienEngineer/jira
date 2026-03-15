@@ -1,8 +1,28 @@
 use crate::config;
-use crate::jira::api;
-use crate::jira::utils;
+use crate::ioc::interface::Interface;
+use crate::jira::api::JiraApi;
+use crate::jira::utils::MetadataService;
 use clap::ArgMatches;
 use std::io::{stdin, BufRead};
+use std::sync::Arc;
+
+pub trait IssueCreationService: Interface {
+    fn handle_issue_creation(&self, matches: &ArgMatches);
+}
+
+pub struct DefaultIssueCreationService {
+    jira_api: Arc<dyn JiraApi>,
+    metadata_service: Arc<dyn MetadataService>,
+}
+
+impl DefaultIssueCreationService {
+    pub fn new(jira_api: Arc<dyn JiraApi>, metadata_service: Arc<dyn MetadataService>) -> Self {
+        Self {
+            jira_api,
+            metadata_service,
+        }
+    }
+}
 
 #[derive(Debug, Default)]
 struct CreationPayload {
@@ -100,103 +120,106 @@ fn get_or_ask(matches: &ArgMatches, key: &str, message: &str) -> Option<String> 
     Some(config::get_alias_or(entry.trim().to_string()))
 }
 
-pub fn handle_issue_creation(matches: &ArgMatches) {
-    let mut project: String = matches.value_of("project").unwrap_or("").to_string();
-    let mut parent: Option<String> = None;
-    if matches.is_present("main") {
-        let main = matches.value_of("main").unwrap();
-        let split = main.split_once('-');
-        if split.is_none() {
-            eprintln!("Invalid ticket id passed as main option.");
+impl IssueCreationService for DefaultIssueCreationService {
+    fn handle_issue_creation(&self, matches: &ArgMatches) {
+        let mut project: String = matches.value_of("project").unwrap_or("").to_string();
+        let mut parent: Option<String> = None;
+        if matches.is_present("main") {
+            let main = matches.value_of("main").unwrap();
+            let split = main.split_once('-');
+            if split.is_none() {
+                eprintln!("Invalid ticket id passed as main option.");
+                std::process::exit(1);
+            }
+            project = split.unwrap().0.to_string();
+            parent = Some(main.to_string());
+        }
+        if project.is_empty() {
+            eprintln!("Cannot determine project. ");
             std::process::exit(1);
         }
-        project = split.unwrap().0.to_string();
-        parent = Some(main.to_string());
-    }
-    if project.is_empty() {
-        eprintln!("Cannot determine project. ");
-        std::process::exit(1);
-    }
-    let summary = get_or_ask(
-        matches,
-        "summary",
-        "Please enter the summary of the project: ",
-    );
-    if summary.is_none() {
-        eprintln!("Summary is a required field.");
-        std::process::exit(1);
-    }
-    let mut description = matches.value_of("description").unwrap_or("").to_string();
-    if !matches.is_present("quiet") && description.is_empty() {
-        println!("Please enter the description of issue. (Use ctrl+d to end the description)");
-        let input = stdin();
-        let mut line = String::new();
-        let mut stream = input.lock();
-        while let Ok(n) = stream.read_line(&mut line) {
-            if n == 0 {
-                break;
-            }
-            description = format!("{description}\n{line}");
-
-            line = String::new();
+        let summary = get_or_ask(
+            matches,
+            "summary",
+            "Please enter the summary of the project: ",
+        );
+        if summary.is_none() {
+            eprintln!("Summary is a required field.");
+            std::process::exit(1);
         }
-    }
-    let assignee = if matches.is_present("assignee") {
-        let assignee_query = matches.value_of("assignee").unwrap();
-        utils::get_account_id(assignee_query.to_string())
-    } else {
-        config::get_config("account_id".to_string())
-    };
-    if assignee.is_empty() {
-        eprintln!("Please provide appropriate user email to continue.");
-        std::process::exit(1);
-    }
-    let issuetype = get_or_ask(matches, "type", "Please enter type of issue: ");
-    let labels = get_or_ask(
-        matches,
-        "labels",
-        "Please enter comma separated list of labels to assign: ",
-    );
-    let priority = get_or_ask(
-        matches,
-        "priority",
-        "Please enter the priority of the ticket: ",
-    );
-    let components = get_or_ask(
-        matches,
-        "components",
-        "Please enter Comma separated list of components of ticket: ",
-    );
-    let custom = if matches.is_present("custom") {
-        Some(matches.value_of("custom").unwrap_or("").to_string())
-    } else {
-        None
-    };
-    let payload = CreationPayload {
-        project: project.clone(),
-        parent,
-        issuetype: utils::get_issuetype_id(project, issuetype),
-        priority,
-        custom,
-        summary: summary.unwrap(),
-        labels: split_and_apply_alias(labels),
-        components: split_and_apply_alias(components),
-        assignee,
-        description: if description.is_empty() {
-            None
+        let mut description = matches.value_of("description").unwrap_or("").to_string();
+        if !matches.is_present("quiet") && description.is_empty() {
+            println!("Please enter the description of issue. (Use ctrl+d to end the description)");
+            let input = stdin();
+            let mut line = String::new();
+            let mut stream = input.lock();
+            while let Ok(n) = stream.read_line(&mut line) {
+                if n == 0 {
+                    break;
+                }
+                description = format!("{description}\n{line}");
+
+                line = String::new();
+            }
+        }
+        let assignee = if matches.is_present("assignee") {
+            let assignee_query = matches.value_of("assignee").unwrap();
+            self.metadata_service
+                .get_account_id(assignee_query.to_string())
         } else {
-            Some(description)
-        },
-    };
-    let json_node = payload.json();
-    let created_api_response = api::post_call("issue".to_string(), json_node, 2);
-    if created_api_response.is_err() {
-        eprintln!("Unable to create ticket.");
-        std::process::exit(1);
-    }
-    let response = json::parse(&created_api_response.unwrap());
-    if let Ok(response_object) = response {
-        let key = &response_object["key"];
-        println!("New Ticket KEY: {key} Created.");
+            config::get_config("account_id".to_string())
+        };
+        if assignee.is_empty() {
+            eprintln!("Please provide appropriate user email to continue.");
+            std::process::exit(1);
+        }
+        let issuetype = get_or_ask(matches, "type", "Please enter type of issue: ");
+        let labels = get_or_ask(
+            matches,
+            "labels",
+            "Please enter comma separated list of labels to assign: ",
+        );
+        let priority = get_or_ask(
+            matches,
+            "priority",
+            "Please enter the priority of the ticket: ",
+        );
+        let components = get_or_ask(
+            matches,
+            "components",
+            "Please enter Comma separated list of components of ticket: ",
+        );
+        let custom = if matches.is_present("custom") {
+            Some(matches.value_of("custom").unwrap_or("").to_string())
+        } else {
+            None
+        };
+        let payload = CreationPayload {
+            project: project.clone(),
+            parent,
+            issuetype: self.metadata_service.get_issuetype_id(project, issuetype),
+            priority,
+            custom,
+            summary: summary.unwrap(),
+            labels: split_and_apply_alias(labels),
+            components: split_and_apply_alias(components),
+            assignee,
+            description: if description.is_empty() {
+                None
+            } else {
+                Some(description)
+            },
+        };
+        let json_node = payload.json();
+        let created_api_response = self.jira_api.post("issue", json_node, 2);
+        if created_api_response.is_err() {
+            eprintln!("Unable to create ticket.");
+            std::process::exit(1);
+        }
+        let response = json::parse(&created_api_response.unwrap());
+        if let Ok(response_object) = response {
+            let key = &response_object["key"];
+            println!("New Ticket KEY: {key} Created.");
+        }
     }
 }

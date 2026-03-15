@@ -5,6 +5,7 @@ use std::io::Read;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use crate::ioc;
 use crate::jira;
 use crate::prelude::Result;
 
@@ -68,8 +69,8 @@ impl Default for JiraConfig {
             account_id: String::new(),
             board_id: None,
             jira_version: None,
-            alias: std::collections::HashMap::new(),
-            transitions: std::collections::HashMap::new(),
+            alias: HashMap::new(),
+            transitions: HashMap::new(),
         }
     }
 }
@@ -146,7 +147,9 @@ fn check_config_exists() -> Result<bool> {
 pub fn ensure_account_id() {
     let account_id = get_config("account_id".to_string());
     if account_id.is_empty() {
-        match jira::user::fetch_current_account_id() {
+        match crate::get_instance!(ioc::global(), jira::user::CurrentUserService)
+            .fetch_current_account_id()
+        {
             Some(id) => {
                 println!("Fetched account_id automatically: {id}");
                 update_config("account_id".to_string(), id);
@@ -196,7 +199,9 @@ fn create_config() -> Result<()> {
         let b64 = base64::encode(user_password);
         (email.trim().to_string(), b64)
     };
-    let account_id = jira::user::fetch_current_account_id().unwrap_or_default();
+    let account_id = crate::get_instance!(ioc::global(), jira::user::CurrentUserService)
+        .fetch_current_account_id()
+        .unwrap_or_default();
 
     let configuration = json::object! {
         namespace: namespace.trim(),

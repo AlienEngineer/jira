@@ -1,17 +1,43 @@
-use crate::config;
-use crate::jira::{api, utils};
+use std::sync::Arc;
 
-pub fn assign_task(ticket: String, user: String) {
-    let aliased_query = config::get_alias_or(user);
-    let account_id = utils::get_account_id(aliased_query);
-    let payload = json::object! {
-        "accountId": account_id
-    };
-    let update_response = api::put_call(format!("issue/{ticket}/assignee"), payload, 3);
-    if update_response.is_err() {
-        eprintln!("Error occurred While assigning the ticket.");
-        std::process::exit(1);
+use crate::config;
+use crate::ioc::interface::Interface;
+use crate::jira::api::JiraApi;
+use crate::jira::utils::MetadataService;
+
+pub trait AssignService: Interface {
+    fn assign_task(&self, ticket: String, user: String);
+}
+
+pub struct DefaultAssignService {
+    jira_api: Arc<dyn JiraApi>,
+    metadata_service: Arc<dyn MetadataService>,
+}
+
+impl DefaultAssignService {
+    pub fn new(jira_api: Arc<dyn JiraApi>, metadata_service: Arc<dyn MetadataService>) -> Self {
+        Self {
+            jira_api,
+            metadata_service,
+        }
     }
-    let response = update_response.unwrap();
-    println!("Successfully Assigned {response}");
+}
+
+impl AssignService for DefaultAssignService {
+    fn assign_task(&self, ticket: String, user: String) {
+        let aliased_query = config::get_alias_or(user);
+        let account_id = self.metadata_service.get_account_id(aliased_query);
+        let payload = json::object! {
+            "accountId": account_id
+        };
+        let update_response = self
+            .jira_api
+            .put(&format!("issue/{ticket}/assignee"), payload, 3);
+        if update_response.is_err() {
+            eprintln!("Error occurred While assigning the ticket.");
+            std::process::exit(1);
+        }
+        let response = update_response.unwrap();
+        println!("Successfully Assigned {response}");
+    }
 }

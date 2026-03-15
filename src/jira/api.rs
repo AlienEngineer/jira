@@ -1,59 +1,76 @@
 use crate::api;
 use crate::api::request::ApiRequest;
 use crate::config;
+use crate::ioc::interface::Interface;
 use std::error::Error;
 
-/// Call the GET API Service for provided endpoint.
-/// This is a wrapper on existing api service which will add the namespace and authentication from
-/// config.
-///
-/// # Arguments
-///
-/// * endpoint - Endpoint to call the api. Example: user/search
-/// * version - Rest API Version to call. Values will be 2/3 as of now.
-fn get_call(endpoint: String, version: u8) -> Result<json::JsonValue, Box<dyn Error>> {
-    let api_request = get_api_request(endpoint, json::object! {}, version);
-    api::get(api_request)
+pub trait JiraApi: Interface {
+    fn get(&self, endpoint: &str, version: u8) -> Result<json::JsonValue, Box<dyn Error>>;
+    fn get_v2(&self, endpoint: &str) -> Result<json::JsonValue, Box<dyn Error>> {
+        self.get(endpoint, 2)
+    }
+    fn get_v3(&self, endpoint: &str) -> Result<json::JsonValue, Box<dyn Error>> {
+        self.get(
+            endpoint,
+            config::get_config("version".to_string())
+                .parse::<u8>()
+                .unwrap_or(3),
+        )
+    }
+    fn post(
+        &self,
+        endpoint: &str,
+        json_value: json::JsonValue,
+        version: u8,
+    ) -> Result<String, Box<dyn Error>>;
+    fn put(
+        &self,
+        endpoint: &str,
+        json_value: json::JsonValue,
+        version: u8,
+    ) -> Result<String, Box<dyn Error>>;
+    fn get_agile(&self, endpoint: &str) -> Result<json::JsonValue, Box<dyn Error>>;
 }
 
-/// Call the POST API Service for provided endpoint.
-/// This is a wrapper on existing api service which will add the namespace and authentication from
-/// config.
-///
-/// # Arguments
-///
-/// * endpoint - Endpoint to call the api. Example: user/search
-/// * version - Rest API Version to call. Values will be 2/3 as of now.
-pub fn post_call(
-    endpoint: String,
-    json_value: json::JsonValue,
-    version: u8,
-) -> Result<String, Box<dyn Error>> {
-    let api_request = get_api_request(endpoint, json_value, version);
-    api::post(api_request)
+#[derive(Default)]
+pub struct ConfigJiraApi;
+
+impl JiraApi for ConfigJiraApi {
+    fn get(&self, endpoint: &str, version: u8) -> Result<json::JsonValue, Box<dyn Error>> {
+        let api_request = build_api_request(endpoint, json::object! {}, version);
+        api::get(api_request)
+    }
+
+    fn post(
+        &self,
+        endpoint: &str,
+        json_value: json::JsonValue,
+        version: u8,
+    ) -> Result<String, Box<dyn Error>> {
+        let api_request = build_api_request(endpoint, json_value, version);
+        api::post(api_request)
+    }
+
+    fn put(
+        &self,
+        endpoint: &str,
+        json_value: json::JsonValue,
+        version: u8,
+    ) -> Result<String, Box<dyn Error>> {
+        let api_request = build_api_request(endpoint, json_value, version);
+        api::put(api_request)
+    }
+
+    fn get_agile(&self, endpoint: &str) -> Result<json::JsonValue, Box<dyn Error>> {
+        let api_request = build_api_request(endpoint, json::object! {}, 1);
+        api::get_agile(api_request)
+    }
 }
 
-/// Call the PUT API Service for provided endpoint.
-/// This is a wrapper on existing api service which will add the namespace and authentication from
-/// config.
-///
-/// # Arguments
-///
-/// * endpoint - Endpoint to call the api. Example: user/search
-/// * version - Rest API Version to call. Values will be 2/3 as of now.
-pub fn put_call(
-    endpoint: String,
-    json_value: json::JsonValue,
-    version: u8,
-) -> Result<String, Box<dyn Error>> {
-    let api_request = get_api_request(endpoint, json_value, version);
-    api::put(api_request)
-}
-
-fn get_api_request(endpoint: String, json_value: json::JsonValue, version: u8) -> ApiRequest {
+fn build_api_request(endpoint: &str, json_value: json::JsonValue, version: u8) -> ApiRequest {
     let auth_mode = config::get_config("auth_mode".to_string());
     ApiRequest {
-        url: endpoint,
+        url: endpoint.to_string(),
         username: config::get_config("email".to_string()),
         password: config::get_config("token".to_string()),
         json: json_value,
@@ -65,37 +82,4 @@ fn get_api_request(endpoint: String, json_value: json::JsonValue, version: u8) -
             auth_mode
         },
     }
-}
-
-/// Shortcut for version 2 get_call.
-///
-/// # Arguments
-///
-/// * endpoint - Endpoint to call the api. Example: user/search
-pub fn get_call_v2(endpoint: String) -> Result<json::JsonValue, Box<dyn Error>> {
-    get_call(endpoint, 2)
-}
-
-/// Shortcut for version 3 get_call.
-///
-/// # Arguments
-///
-/// * endpoint - Endpoint to call the api. Example: user/search
-pub fn get_call_v3(endpoint: String) -> Result<json::JsonValue, Box<dyn Error>> {
-    get_call(
-        endpoint,
-        config::get_config("version".to_string())
-            .parse::<u8>()
-            .unwrap_or(3),
-    )
-}
-
-/// Call the Agile GET API (rest/agile/1.0/) with the provided endpoint.
-///
-/// # Arguments
-///
-/// * endpoint - Endpoint relative to `/rest/agile/1.0/`. Example: `board/42/sprint?state=active`
-pub fn get_agile_call(endpoint: String) -> Result<json::JsonValue, Box<dyn Error>> {
-    let api_request = get_api_request(endpoint, json::object! {}, 1);
-    api::get_agile(api_request)
 }

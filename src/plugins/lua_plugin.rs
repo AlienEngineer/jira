@@ -1,7 +1,9 @@
 use crate::config::JiraConfig;
 use crate::jira::sprint::{Pbi, Sprint};
+use crate::prelude::Result;
 use include_dir::{include_dir, Dir, DirEntry};
-use mlua::Lua;
+use mlua::{Lua, Table};
+use std::fs;
 use std::path::{Path, PathBuf};
 
 static BUNDLED_PLUGINS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/plugins");
@@ -24,7 +26,7 @@ pub struct JiraContext {
 /// - `jira_context.config`       — connection settings (namespace, token, …)
 /// - `jira_context.sprint`       — active sprint (name, goal, end_date, pbis[])
 /// - `jira_context.selected_pbi` — the currently selected PBI, or `nil`
-fn inject_context(lua: &Lua, ctx: &JiraContext) -> crate::prelude::Result<()> {
+fn inject_context(lua: &Lua, ctx: &JiraContext) -> Result<()> {
     let root = lua.create_table()?;
 
     // config
@@ -58,7 +60,7 @@ fn inject_context(lua: &Lua, ctx: &JiraContext) -> crate::prelude::Result<()> {
     Ok(())
 }
 
-fn pbi_to_lua(lua: &Lua, pbi: &Pbi) -> crate::prelude::Result<mlua::Table> {
+fn pbi_to_lua(lua: &Lua, pbi: &Pbi) -> Result<Table> {
     let tbl = lua.create_table()?;
     tbl.set("key", pbi.key.clone())?;
     tbl.set("summary", pbi.summary.clone())?;
@@ -71,23 +73,20 @@ fn pbi_to_lua(lua: &Lua, pbi: &Pbi) -> crate::prelude::Result<mlua::Table> {
     tbl.set("labels", pbi.labels.clone())?;
     tbl.set("in_progress_at", pbi.in_progress_at.clone())?;
     tbl.set("resolved_at", pbi.resolved_at.clone())?;
-    tbl.set(
-        "elapsed_minutes",
-        crate::jira::sprint::pbi_elapsed_minutes(pbi),
-    )?;
+    tbl.set("elapsed_minutes", pbi.elapsed_minutes().unwrap())?;
     Ok(tbl)
 }
 
-fn execute_lua_script(script: &str, ctx: &JiraContext) -> crate::prelude::Result<String> {
+fn execute_lua_script(script: &str, ctx: &JiraContext) -> Result<String> {
     let lua = Lua::new();
     inject_context(&lua, ctx)?;
     let result: String = lua.load(script).eval()?;
     Ok(result)
 }
 
-fn load_plugins_from_path(path: &str) -> crate::prelude::Result<Vec<JiraPlugin>> {
+fn load_plugins_from_path(path: &str) -> Result<Vec<JiraPlugin>> {
     let mut plugins = Vec::new();
-    for entry in std::fs::read_dir(path)? {
+    for entry in fs::read_dir(path)? {
         let entry = entry?;
         let entry_path = entry.path();
         if entry_path.extension().and_then(|s| s.to_str()) == Some("lua") {
@@ -96,7 +95,7 @@ fn load_plugins_from_path(path: &str) -> crate::prelude::Result<Vec<JiraPlugin>>
                 .and_then(|s| s.to_str())
                 .unwrap_or("");
             if file_name.starts_with("start_") {
-                let script = std::fs::read_to_string(&entry_path)?;
+                let script = fs::read_to_string(&entry_path)?;
                 plugins.push(JiraPlugin { lua_script: script });
             }
         }
@@ -143,13 +142,13 @@ fn bundled_plugin_files() -> Vec<(&'static str, &'static [u8])> {
 fn install_plugin_files<I, N, C>(
     plugin_files: I,
     destination_dir: &Path,
-) -> crate::prelude::Result<PluginInstallSummary>
+) -> Result<PluginInstallSummary>
 where
     I: IntoIterator<Item = (N, C)>,
     N: AsRef<str>,
     C: AsRef<[u8]>,
 {
-    std::fs::create_dir_all(destination_dir)?;
+    fs::create_dir_all(destination_dir)?;
 
     let mut summary = PluginInstallSummary {
         copied: 0,
@@ -163,14 +162,14 @@ where
             continue;
         }
 
-        std::fs::write(destination, contents.as_ref())?;
+        fs::write(destination, contents.as_ref())?;
         summary.copied += 1;
     }
 
     Ok(summary)
 }
 
-pub fn install_bundled_plugins() -> crate::prelude::Result<PluginInstallSummary> {
+pub fn install_bundled_plugins() -> Result<PluginInstallSummary> {
     let destination_dir = PathBuf::from(get_plugins_path());
     install_plugin_files(bundled_plugin_files(), &destination_dir)
 }
@@ -183,9 +182,9 @@ pub fn install_bundled_plugins() -> crate::prelude::Result<PluginInstallSummary>
 /// local pbi = jira_context.selected_pbi
 /// return "Selected: " .. (pbi and pbi.key or "none")
 /// ```
-pub fn execute_plugins<F>(ctx: &JiraContext, mut callback: F) -> crate::prelude::Result<()>
+pub fn execute_plugins<F>(ctx: &JiraContext, mut callback: F) -> Result<()>
 where
-    F: FnMut(Result<String, String>),
+    F: FnMut(std::result::Result<String, String>),
 {
     let plugins_path = get_plugins_path();
     let plugins = load_plugins_from_path(&plugins_path)?;
@@ -201,8 +200,10 @@ where
 #[cfg(test)]
 mod tests {
     use super::{install_plugin_files, PluginInstallSummary};
+    use std::env;
     use std::fs;
     use std::path::PathBuf;
+    use std::process;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn make_temp_dir(test_name: &str) -> PathBuf {
@@ -210,9 +211,9 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("system time should be after unix epoch")
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!(
+        let dir = env::temp_dir().join(format!(
             "jira-plugin-tests-{test_name}-{}-{unique}",
-            std::process::id()
+            process::id()
         ));
         fs::create_dir_all(&dir).expect("temp dir should be created");
         dir

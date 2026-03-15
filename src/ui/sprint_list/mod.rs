@@ -8,12 +8,19 @@ use progress_block::{ProgressBlock, SprintProgressData};
 use sprint_goal::SprintGoalWidget;
 use sprint_table::{SprintTable, TableAction};
 
-use crate::jira::sprint::{self, Sprint};
+use crate::jira::raw::RawService;
+use crate::jira::sprint::{self, Sprint, SprintService};
+use crate::prelude::Result;
 use crate::ui::pbi_detail::{PbiDetailAction, PbiDetailView};
 use crate::ui::plugin_list::{PluginListAction, PluginListView};
-use crossterm::event::{self, Event, KeyEventKind};
-use ratatui::layout::{Constraint, Layout};
-use std::path::PathBuf;
+use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::{DefaultTerminal, Frame};
+use std::env;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::Arc;
 use std::time::Duration;
 
 // ── Active view ───────────────────────────────────────────────────────────────
@@ -36,6 +43,7 @@ enum ActiveView {
 pub struct SprintApp {
     goal: SprintGoalWidget,
     table: SprintTable,
+    raw_service: Arc<dyn RawService>,
     progress: ProgressBlock,
     footer: Footer,
     exit: bool,
@@ -47,10 +55,15 @@ pub struct SprintApp {
 }
 
 impl SprintApp {
-    pub fn new(sprint: Sprint) -> Self {
+    pub fn new(
+        sprint: Sprint,
+        sprint_service: Arc<dyn SprintService>,
+        raw_service: Arc<dyn RawService>,
+    ) -> Self {
         Self {
             goal: SprintGoalWidget::new(sprint.name.clone(), sprint.goal.clone()),
-            table: SprintTable::new(sprint),
+            table: SprintTable::new(sprint, sprint_service),
+            raw_service,
             progress: ProgressBlock::new(),
             footer: Footer::new(),
             exit: false,
@@ -60,7 +73,7 @@ impl SprintApp {
         }
     }
 
-    pub fn run(&mut self, terminal: &mut ratatui::DefaultTerminal) -> crate::prelude::Result<()> {
+    pub fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
         while !self.exit {
             self.process_background_messages();
 
@@ -111,7 +124,7 @@ impl SprintApp {
 
     // ── Layout & rendering ────────────────────────────────────────────────────
 
-    fn draw(&mut self, frame: &mut ratatui::Frame) {
+    fn draw(&mut self, frame: &mut Frame) {
         let area = frame.area();
         match &mut self.active_view {
             ActiveView::PbiDetail(detail) => {
@@ -126,7 +139,7 @@ impl SprintApp {
         }
     }
 
-    fn draw_sprint(&mut self, frame: &mut ratatui::Frame, area: ratatui::layout::Rect) {
+    fn draw_sprint(&mut self, frame: &mut Frame, area: Rect) {
         let goal_height = self.goal.goal_height();
 
         let layout = Layout::vertical([
@@ -151,7 +164,7 @@ impl SprintApp {
 
     // ── Event handling ────────────────────────────────────────────────────────
 
-    fn handle_events(&mut self) -> crate::prelude::Result<()> {
+    fn handle_events(&mut self) -> Result<()> {
         if let Event::Key(key) = event::read()? {
             if key.kind == KeyEventKind::Press {
                 match &mut self.active_view {
@@ -168,7 +181,7 @@ impl SprintApp {
         Ok(())
     }
 
-    fn handle_detail_key(&mut self, key: crossterm::event::KeyCode) {
+    fn handle_detail_key(&mut self, key: KeyCode) {
         // Temporarily take ownership so we can mutate the view and then
         // potentially replace active_view without a borrow conflict.
         let ActiveView::PbiDetail(ref mut detail) = self.active_view else {
@@ -185,7 +198,7 @@ impl SprintApp {
         }
     }
 
-    fn handle_plugin_list_key(&mut self, key: crossterm::event::KeyCode) {
+    fn handle_plugin_list_key(&mut self, key: KeyCode) {
         let ActiveView::PluginList(ref mut plugin_list) = self.active_view else {
             return;
         };
@@ -201,9 +214,7 @@ impl SprintApp {
     }
 
     fn open_raw_in_editor(&self, key: &str) {
-        let json = match crate::jira::api::get_call_v2(format!(
-            "issue/{key}?expand=changelog,renderedFields"
-        )) {
+        let json = match self.raw_service.fetch_raw_issue(key) {
             Ok(v) => json::stringify_pretty(v, 2),
             Err(e) => {
                 eprintln!("Error fetching {key}: {e}");
@@ -211,22 +222,22 @@ impl SprintApp {
             }
         };
 
-        let tmp_path = std::env::temp_dir().join(format!("jira_raw_{key}.json"));
-        if let Err(e) = std::fs::write(&tmp_path, &json) {
+        let tmp_path = env::temp_dir().join(format!("jira_raw_{key}.json"));
+        if let Err(e) = fs::write(&tmp_path, &json) {
             eprintln!("Failed to write temp file: {e}");
             return;
         }
 
-        let editor = std::env::var("VISUAL")
-            .or_else(|_| std::env::var("EDITOR"))
+        let editor = env::var("VISUAL")
+            .or_else(|_| env::var("EDITOR"))
             .unwrap_or_else(|_| "vi".to_string());
 
-        let _ = std::process::Command::new(&editor)
+        let _ = Command::new(&editor)
             .arg(&tmp_path)
             .status()
             .map_err(|e| eprintln!("Failed to open editor '{editor}': {e}"));
 
-        let _ = std::fs::remove_file(&tmp_path);
+        let _ = fs::remove_file(&tmp_path);
     }
 
     fn dispatch(&mut self, action: TableAction) {
@@ -248,12 +259,12 @@ impl SprintApp {
 
 // ── Free functions ────────────────────────────────────────────────────────────
 
-fn open_file_in_editor(path: &std::path::Path) {
-    let editor = std::env::var("VISUAL")
-        .or_else(|_| std::env::var("EDITOR"))
+fn open_file_in_editor(path: &Path) {
+    let editor = env::var("VISUAL")
+        .or_else(|_| env::var("EDITOR"))
         .unwrap_or_else(|_| "vi".to_string());
 
-    let _ = std::process::Command::new(&editor)
+    let _ = Command::new(&editor)
         .arg(path)
         .status()
         .map_err(|e| eprintln!("Failed to open editor '{editor}': {e}"));

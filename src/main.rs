@@ -13,6 +13,65 @@ pub mod subcommands;
 pub mod ui;
 
 fn main() -> prelude::Result<()> {
+    let mut ioc = ioc::Ioc::new();
+    register_service!(ioc, jira::api::JiraApi, jira::api::ConfigJiraApi);
+    register_service!(ioc, jira::user::CurrentUserService, {
+        jira::user::DefaultCurrentUserService::new(get_instance!(jira::api::JiraApi))
+    });
+    register_service!(ioc, jira::utils::MetadataService, {
+        jira::utils::DefaultMetadataService::new(get_instance!(jira::api::JiraApi))
+    });
+    register_service!(ioc, jira::assign::AssignService, {
+        jira::assign::DefaultAssignService::new(
+            get_instance!(jira::api::JiraApi),
+            get_instance!(jira::utils::MetadataService),
+        )
+    });
+    register_service!(ioc, jira::fields::FieldsService, {
+        jira::fields::DefaultFieldsService::new(get_instance!(jira::api::JiraApi))
+    });
+    register_service!(ioc, jira::lists::ListService, {
+        jira::lists::DefaultListService::new(get_instance!(jira::api::JiraApi))
+    });
+    register_service!(ioc, jira::raw::RawService, {
+        jira::raw::DefaultRawService::new(get_instance!(jira::api::JiraApi))
+    });
+    register_service!(ioc, jira::comments::CommentsService, {
+        jira::comments::DefaultCommentsService::new(
+            get_instance!(jira::api::JiraApi),
+            get_instance!(jira::utils::MetadataService),
+        )
+    });
+    register_service!(ioc, jira::details::DetailService, {
+        jira::details::DefaultDetailService::new(
+            get_instance!(jira::api::JiraApi),
+            get_instance!(jira::comments::CommentsService),
+        )
+    });
+    register_service!(ioc, jira::new_issue::IssueCreationService, {
+        jira::new_issue::DefaultIssueCreationService::new(
+            get_instance!(jira::api::JiraApi),
+            get_instance!(jira::utils::MetadataService),
+        )
+    });
+    register_service!(ioc, jira::update::UpdateService, {
+        jira::update::DefaultUpdateService::new(get_instance!(jira::api::JiraApi))
+    });
+    register_service!(ioc, jira::transitions::TransitionService, {
+        jira::transitions::DefaultTransitionService::new(get_instance!(jira::api::JiraApi))
+    });
+    register_service!(ioc, jira::sprint::SprintService, {
+        jira::sprint::DefaultSprintService::new(get_instance!(jira::api::JiraApi))
+    });
+    register_service!(
+        ioc,
+        jira::logout::LogoutService,
+        jira::logout::DefaultLogoutService
+    );
+    if ioc::set_global(ioc).is_err() {
+        panic!("global IoC container should only be initialized once");
+    }
+
     config::ensure_config()?;
     let app = App::new("JIRA")
         .version(crate_version!())

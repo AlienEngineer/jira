@@ -1,4 +1,6 @@
+use crate::plugins::lua_plugin::{get_plugins_path, install_bundled_plugins};
 use clap::{App, ArgMatches, SubCommand};
+use std::process;
 
 pub fn subcommand() -> App<'static, 'static> {
     SubCommand::with_name("plugin")
@@ -12,15 +14,15 @@ pub fn subcommand() -> App<'static, 'static> {
 
 pub fn handle(matches: &ArgMatches) {
     if matches.subcommand_matches("generate").is_some() {
-        if let Err(e) = crate::plugins::lua_plugin::install_bundled_plugins().map(|summary| {
-            let plugins_path = crate::plugins::lua_plugin::get_plugins_path();
+        if let Err(e) = install_bundled_plugins().map(|summary| {
+            let plugins_path = get_plugins_path();
             println!(
                 "Bundled plugins synced to {plugins_path} (copied: {}, skipped: {}).",
                 summary.copied, summary.skipped
             );
         }) {
             eprintln!("Error: {e}");
-            std::process::exit(1);
+            process::exit(1);
         }
     } else {
         println!("Usage: jira plugin generate");

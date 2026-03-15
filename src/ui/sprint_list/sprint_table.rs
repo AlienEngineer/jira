@@ -1,4 +1,5 @@
-use crate::jira::sprint::{self, pbi_elapsed_display, Pbi, Sprint};
+use crate::config::JiraConfig;
+use crate::jira::sprint::{pbi_elapsed_display, sort_by_status, Pbi, Sprint, SprintService};
 use crate::plugins::lua_plugin::{execute_plugins, JiraContext};
 use crossterm::event::KeyCode;
 use ratatui::{
@@ -7,8 +8,15 @@ use ratatui::{
     widgets::{Block, Cell, Row, Table, TableState},
     Frame,
 };
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc};
 use std::thread;
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+use std::process::Command;
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+use std::io::{Error, ErrorKind};
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+use std::process::ExitStatus;
 
 // ── Internal channel message ─────────────────────────────────────────────────
 
@@ -64,6 +72,7 @@ enum TableMode {
 /// via [`TableAction`] values returned from [`SprintTable::handle_key`].
 pub struct SprintTable {
     pub sprint: Sprint,
+    sprint_service: Arc<dyn SprintService>,
     pub table_state: TableState,
     loading_idx: Option<usize>,
     load_rx: Option<mpsc::Receiver<LoadMsg>>,
@@ -71,13 +80,14 @@ pub struct SprintTable {
 }
 
 impl SprintTable {
-    pub fn new(sprint: Sprint) -> Self {
+    pub fn new(sprint: Sprint, sprint_service: Arc<dyn SprintService>) -> Self {
         let mut table_state = TableState::default();
         if !sprint.pbis.is_empty() {
             table_state.select(Some(0));
         }
         Self {
             sprint,
+            sprint_service,
             table_state,
             loading_idx: None,
             load_rx: None,
@@ -94,11 +104,12 @@ impl SprintTable {
 
     fn start_load_all(&mut self) {
         let board_id = self.sprint.board_id.clone();
+        let sprint_service = Arc::clone(&self.sprint_service);
         let (tx, rx) = mpsc::channel();
         self.load_rx = Some(rx);
 
         thread::spawn(
-            move || match sprint::fetch_active_sprint_issues(&board_id) {
+            move || match sprint_service.fetch_active_sprint_issues(&board_id) {
                 Ok(s) => {
                     let _ = tx.send(LoadMsg::SprintRefreshed(s.pbis));
                 }
@@ -173,9 +184,12 @@ impl SprintTable {
         let key = self.sprint.pbis[i].key.clone();
         self.loading_idx = Some(i);
 
-        let actions = match sprint::fetch_pbi_details(&mut self.sprint.pbis[i]) {
+        let actions = match self
+            .sprint_service
+            .fetch_pbi_details(&mut self.sprint.pbis[i])
+        {
             Ok(()) => {
-                sprint::sort_by_status(&mut self.sprint.pbis);
+                sort_by_status(&mut self.sprint.pbis);
                 vec![
                     TableAction::SetStatus(format!("Loaded {key}")),
                     TableAction::SaveCache,
@@ -194,16 +208,16 @@ impl SprintTable {
 
     fn open_selected_in_browser(&self) -> Vec<TableAction> {
         let pbi = self.get_selected_pbi();
-        let config = crate::config::JiraConfig::load().unwrap_or_default();
+        let config = JiraConfig::load().unwrap_or_default();
         let url = format!("{}/browse/{}", config.namespace, pbi.key);
 
         #[cfg(target_os = "macos")]
-        let result = std::process::Command::new("open").arg(&url).status();
+        let result = Command::new("open").arg(&url).status();
         #[cfg(target_os = "linux")]
-        let result = std::process::Command::new("xdg-open").arg(&url).status();
+        let result = Command::new("xdg-open").arg(&url).status();
         #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-        let result: Result<std::process::ExitStatus, std::io::Error> = Err(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
+        let result: Result<ExitStatus, Error> = Err(Error::new(
+            ErrorKind::Unsupported,
             "unsupported platform",
         ));
 
@@ -224,7 +238,7 @@ impl SprintTable {
     fn start_work_on_selected(&mut self) -> Vec<TableAction> {
         let mut actions: Vec<TableAction> = Vec::new();
         let ctx = JiraContext {
-            config: crate::config::JiraConfig::load().unwrap_or_default(),
+            config: JiraConfig::load().unwrap_or_default(),
             sprint: self.sprint.clone(),
             selected_pbi: self.get_selected_pbi().clone(),
         };

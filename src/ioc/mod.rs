@@ -3,13 +3,14 @@ pub mod interface;
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
-    sync::{Arc, RwLock},
+    sync::{Arc, OnceLock, RwLock},
 };
 
 use crate::ioc::interface::Interface;
 
 type Service = Box<dyn Any + Send + Sync>;
 type Factory = Arc<dyn Fn(&Ioc) -> Service + Send + Sync>;
+static GLOBAL_IOC: OnceLock<Ioc> = OnceLock::new();
 
 #[macro_export]
 macro_rules! register_service {
@@ -118,6 +119,16 @@ impl Default for Ioc {
     fn default() -> Self {
         Self::new()
     }
+}
+
+pub fn set_global(ioc: Ioc) -> Result<(), Ioc> {
+    GLOBAL_IOC.set(ioc)
+}
+
+pub fn global() -> &'static Ioc {
+    GLOBAL_IOC
+        .get()
+        .expect("global IoC container has not been initialized")
 }
 
 #[cfg(test)]

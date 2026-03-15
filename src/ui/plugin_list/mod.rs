@@ -7,6 +7,7 @@ use ratatui::{
     widgets::{Block, HighlightSpacing, List, ListItem, ListState},
     Frame,
 };
+use std::fs;
 use std::path::PathBuf;
 
 // ── Actions ───────────────────────────────────────────────────────────────────
@@ -166,7 +167,7 @@ impl Default for PluginListView {
 
 fn load_start_plugins() -> Vec<PathBuf> {
     let plugins_path = get_plugins_path();
-    let Ok(entries) = std::fs::read_dir(&plugins_path) else {
+    let Ok(entries) = fs::read_dir(&plugins_path) else {
         return Vec::new();
     };
 
