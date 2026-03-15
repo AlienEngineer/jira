@@ -15,6 +15,11 @@ pub struct Pbi {
     pub in_progress_at: Option<String>,
     pub resolved_at: Option<String>,
     pub raw: String,
+    pub resolution: Option<String>,
+    pub components: Vec<String>,
+    pub creator: String,
+    pub reporter: String,
+    pub project: String,
 }
 
 impl Pbi {

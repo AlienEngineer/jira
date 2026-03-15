@@ -5,9 +5,12 @@ use std::sync::Arc;
 use crate::config;
 use crate::ioc::interface::Interface;
 use crate::jira::api::JiraApi;
+use crate::jira::pbi::Pbi;
+
+// ── Service ───────────────────────────────────────────────────────────────────
 
 pub trait ListService: Interface {
-    fn list_issues(&self, matches: &ArgMatches);
+    fn list_issues(&self, matches: &ArgMatches) -> Vec<Pbi>;
 }
 
 pub struct DefaultListService {
@@ -20,48 +23,49 @@ impl DefaultListService {
     }
 }
 
-fn display_content(option: &json::JsonValue, value: &json::JsonValue) {
-    let mut content: String;
-    if value.is_array() {
-        let mut contents: Vec<String> = vec![];
-        let field = option["field"].as_str().unwrap_or("name");
-        for entry in value.members() {
-            contents.push(String::from(entry[field].as_str().unwrap_or("-")))
-        }
-        content = contents.join(", ");
-    } else if value.is_object() {
-        let field = option["field"].as_str().unwrap_or("name");
-        content = String::from(value[field].as_str().unwrap_or("-"))
-    } else {
-        content = String::from(value.as_str().unwrap_or("-"));
+fn pbi_from_json(issue: &json::JsonValue) -> Pbi {
+    let fields = &issue["fields"];
+    Pbi {
+        key: issue["key"].as_str().unwrap_or("-").to_string(),
+        summary: fields["summary"].as_str().unwrap_or("-").to_string(),
+        status: fields["status"]["name"].as_str().unwrap_or("-").to_string(),
+        assignee: fields["assignee"]["displayName"]
+            .as_str()
+            .unwrap_or("-")
+            .to_string(),
+        issue_type: fields["issuetype"]["name"]
+            .as_str()
+            .unwrap_or("-")
+            .to_string(),
+        description: fields["description"].as_str().map(|s| s.to_string()),
+        priority: fields["priority"]["name"].as_str().map(|s| s.to_string()),
+        story_points: None,
+        labels: fields["labels"]
+            .members()
+            .filter_map(|l| l.as_str().map(|s| s.to_string()))
+            .collect(),
+        loaded: false,
+        in_progress_at: None,
+        resolved_at: fields["resolutiondate"].as_str().map(|s| s.to_string()),
+        raw: fields.dump(),
+        resolution: fields["resolution"]["name"].as_str().map(|s| s.to_string()),
+        components: fields["components"]
+            .members()
+            .filter_map(|c| c["name"].as_str().map(|s| s.to_string()))
+            .collect(),
+        creator: fields["creator"]["displayName"]
+            .as_str()
+            .unwrap_or("-")
+            .to_string(),
+        reporter: fields["reporter"]["displayName"]
+            .as_str()
+            .unwrap_or("-")
+            .to_string(),
+        project: fields["project"]["name"]
+            .as_str()
+            .unwrap_or("-")
+            .to_string(),
     }
-    let width = option["width"].as_usize().unwrap_or(0);
-    content.truncate(width);
-    print!("{content:width$}|")
-}
-
-fn return_json(option: &json::JsonValue, value: &json::JsonValue) -> json::JsonValue {
-    if value.is_array() {
-        let mut contents = json::JsonValue::new_array();
-        let field = option["field"].as_str().unwrap_or("name");
-        for entry in value.members() {
-            let _ = contents.push(String::from(entry[field].as_str().unwrap_or("-")));
-        }
-        contents
-    } else if value.is_object() {
-        let field = option["field"].as_str().unwrap_or("name");
-        value[field].clone()
-    } else {
-        value.clone()
-    }
-}
-
-fn display_header(option: &json::JsonValue) {
-    print!(
-        "{title:width$}|",
-        title = option["title"].as_str().unwrap_or(" "),
-        width = option["width"].as_usize().unwrap_or(0)
-    )
 }
 
 fn form_jql(matches: &ArgMatches) -> String {
@@ -115,99 +119,48 @@ fn form_jql(matches: &ArgMatches) -> String {
 }
 
 impl ListService for DefaultListService {
-    fn list_issues(&self, matches: &ArgMatches) {
-        let show_json = matches.is_present("json");
+    fn list_issues(&self, matches: &ArgMatches) -> Vec<Pbi> {
         let jql = form_jql(matches);
-        let offset_result = matches.value_of("offset").unwrap_or("0").parse::<u32>();
-        if offset_result.is_err() {
-            eprintln!("Invalid option passed to offset. ");
-            std::process::exit(1);
-        }
-        let offset = offset_result.unwrap();
-        let count_result = matches.value_of("count").unwrap_or("50").parse::<u32>();
-        if count_result.is_err() {
-            eprintln!("Invalid option passed to count. ");
-            std::process::exit(1);
-        }
-        let count = count_result.unwrap();
-        let search_response = self.jira_api.get_v3(&format!(
-            "search?maxResults={count}&startAt={offset}&jql={jql}"
-        ));
-        if let Err(e) = &search_response {
-            eprintln!("Error occurred when searching tickets: {e}");
-            std::process::exit(1);
-        }
+
+        let offset = matches
+            .value_of("offset")
+            .unwrap_or("0")
+            .parse::<u32>()
+            .unwrap_or_else(|_| {
+                eprintln!("Invalid option passed to offset.");
+                std::process::exit(1);
+            });
+        let count = matches
+            .value_of("count")
+            .unwrap_or("50")
+            .parse::<u32>()
+            .unwrap_or_else(|_| {
+                eprintln!("Invalid option passed to count.");
+                std::process::exit(1);
+            });
+
+        let search_response = self
+            .jira_api
+            .get_v3(&format!(
+                "search?maxResults={count}&startAt={offset}&jql={jql}"
+            ))
+            .unwrap_or_else(|e| {
+                eprintln!("Error occurred when searching tickets: {e}");
+                std::process::exit(1);
+            });
+
         if matches.is_present("alias") {
             let alias_name = matches.value_of("alias").unwrap();
             config::set_alias(alias_name.to_string(), jql);
             println!("Current filter is now set with value {alias_name}");
             println!("You can use jira list --jql \"{alias_name}\" to reuse this filter.");
         }
-        let issues = &search_response.unwrap()["issues"];
 
-        let display: String = String::from(
-            matches
-                .value_of("display")
-                .unwrap_or("key,summary,status,assignee"),
-        );
-        let display_options = json::object! {
-            "key": {"title": "Key", "width": 10},
-            "resolution": {"title": "Resolution", "width": 10, "field": "name"},
-            "priority": {"title": "Priority", "width": 10, "field": "name"},
-            "assignee": {"title": "Assignee", "width": 20, "field": "displayName"},
-            "status": {"title": "Status", "width": 15, "field": "name"},
-            "components": {"title": "Components", "width": 30, "field": "name"},
-            "creator": {"title": "Creator", "width": 15, "field": "displayName"},
-            "reporter": {"title": "Reporter", "width": 15, "field": "displayName"},
-            "issuetype": {"title": "Issue Type", "width": 10, "field": "name"},
-            "project": {"title": "Project", "width": 15, "field": "name"},
-            "summary": {"title": "Summary", "width": 100}
-        };
-        let headers_to_display = display;
-        let headers = headers_to_display.trim().split(',');
-
-        if show_json {
-            let mut response = json::JsonValue::new_array();
-            for issue in issues.members() {
-                let mut data = json::JsonValue::new_object();
-                for header in headers.clone() {
-                    if header == "key" {
-                        data[header] = return_json(&display_options[header], &issue[header]);
-                    } else {
-                        data[header] =
-                            return_json(&display_options[header], &issue["fields"][header]);
-                    }
-                }
-                let _ = response.push(data);
-            }
-            println!("{}", response.pretty(4));
-            return;
-        }
-
+        let issues = &search_response["issues"];
         if !issues.is_array() {
-            println!("No issues found for the filter.");
-            std::process::exit(0);
+            return vec![];
         }
-        let mut total = 0;
-        for header in headers.clone() {
-            if display_options[header].is_null() {
-                eprintln!("Unknown display option {header} passed. ");
-                std::process::exit(1);
-            }
-            display_header(&display_options[header]);
-            total = total + display_options[header]["width"].as_usize().unwrap_or(0) + 1;
-        }
-        println!();
-        println!("{:->width$}", "", width = total);
-        for issue in issues.members() {
-            for header in headers.clone() {
-                if header == "key" {
-                    display_content(&display_options[header], &issue[header]);
-                } else {
-                    display_content(&display_options[header], &issue["fields"][header]);
-                }
-            }
-            println!();
-        }
+
+        issues.members().map(pbi_from_json).collect()
     }
 }

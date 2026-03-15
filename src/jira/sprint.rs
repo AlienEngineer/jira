@@ -49,6 +49,14 @@ impl DefaultSprintService {
                     in_progress_at: last_in_progress_at(&issue["changelog"]),
                     resolved_at: fields["resolutiondate"].as_str().map(|s| s.to_string()),
                     raw: fields.clone().dump(),
+                    resolution: fields["resolution"]["name"].as_str().map(|s| s.to_string()),
+                    components: fields["components"]
+                        .members()
+                        .filter_map(|c| c["name"].as_str().map(|s| s.to_string()))
+                        .collect(),
+                    creator: fields["creator"]["displayName"].as_string_or(""),
+                    reporter: fields["reporter"]["displayName"].as_string_or(""),
+                    project: fields["project"]["name"].as_string_or(""),
                 });
             }
         }
@@ -195,6 +203,14 @@ pub fn load_sprint_cache(board_id: &str) -> Option<Sprint> {
             in_progress_at: item["in_progress_at"].as_str().map(|s| s.to_string()),
             resolved_at: item["resolved_at"].as_str().map(|s| s.to_string()),
             raw: item.dump(),
+            resolution: item["resolution"].as_str().map(|s| s.to_string()),
+            components: item["components"]
+                .members()
+                .filter_map(|c| c.as_str().map(|s| s.to_string()))
+                .collect(),
+            creator: item["creator"].as_string_or(""),
+            reporter: item["reporter"].as_string_or(""),
+            project: item["project"].as_string_or(""),
         });
     }
 

@@ -48,7 +48,13 @@ pub fn handle_fields_matches(matches: &ArgMatches) {
 }
 
 pub fn handle_list_matches(matches: &ArgMatches) {
-    service::<dyn lists::ListService>().list_issues(matches);
+    let issues = service::<dyn lists::ListService>().list_issues(matches);
+    let display = matches
+        .value_of("display")
+        .unwrap_or("key,summary,status,assignee");
+    let columns: Vec<&str> = display.trim().split(',').collect();
+    let show_json = matches.is_present("json");
+    crate::ui::pbi_list::display_issues(&issues, &columns, show_json);
 }
 
 pub fn handle_detail_matches(matches: &ArgMatches) {
