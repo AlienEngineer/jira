@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod test {
-    use jira::jira::sprint::Pbi;
+    use jira::jira::pbi::Pbi;
     use rstest::rstest;
 
     #[test]
@@ -188,6 +188,7 @@ mod test {
             loaded: false,
             in_progress_at: in_progress_at.map(|s| s.to_string()),
             resolved_at: resolved_at.map(|s| s.to_string()),
+            raw: "".to_string(),
         }
     }
 }

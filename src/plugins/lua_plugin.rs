@@ -1,5 +1,6 @@
 use crate::config::JiraConfig;
-use crate::jira::sprint::{Pbi, Sprint};
+use crate::jira::pbi::Pbi;
+use crate::jira::sprint::Sprint;
 use crate::prelude::Result;
 use include_dir::{include_dir, Dir, DirEntry};
 use mlua::{Lua, Table};

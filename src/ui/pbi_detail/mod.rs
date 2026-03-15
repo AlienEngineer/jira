@@ -1,4 +1,4 @@
-use crate::jira::sprint::{pbi_elapsed_display, Pbi};
+use crate::jira::pbi::{pbi_elapsed_display, Pbi};
 use crossterm::event::KeyCode;
 use ratatui::{
     layout::{Constraint, Layout, Rect},

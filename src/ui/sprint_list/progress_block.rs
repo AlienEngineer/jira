@@ -1,4 +1,4 @@
-use crate::jira::sprint::Pbi;
+use crate::jira::pbi::Pbi;
 use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
@@ -147,7 +147,7 @@ impl ProgressBlock {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::jira::sprint::Pbi;
+    use crate::jira::pbi::Pbi;
 
     /// Build a minimal `Pbi` with only the `status` field filled in; all other
     /// fields use sensible defaults that are irrelevant to `SprintProgressData`.
@@ -165,6 +165,7 @@ mod tests {
             in_progress_at: None,
             resolved_at: None,
             loaded: false,
+            raw: "".into(),
         }
     }
 

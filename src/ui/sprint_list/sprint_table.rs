@@ -1,5 +1,6 @@
 use crate::config::JiraConfig;
-use crate::jira::sprint::{pbi_elapsed_display, sort_by_status, Pbi, Sprint, SprintService};
+use crate::jira::pbi::{pbi_elapsed_display, Pbi};
+use crate::jira::sprint::{sort_by_status, Sprint, SprintService};
 use crate::plugins::lua_plugin::{execute_plugins, JiraContext};
 use crossterm::event::KeyCode;
 use ratatui::{

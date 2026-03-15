@@ -1,8 +1,10 @@
 use jira::jira::api::JiraApi;
-use jira::jira::sprint::{DefaultSprintService, Pbi, SprintService};
+use jira::jira::sprint::{DefaultSprintService, SprintService};
 use std::sync::Arc;
 
 mod tests {
+    use jira::jira::pbi::Pbi;
+
     use super::*;
 
     use std::collections::HashMap;
@@ -228,6 +230,7 @@ mod tests {
             loaded: false,
             in_progress_at: None,
             resolved_at: None,
+            raw: "".to_string(),
         };
 
         service

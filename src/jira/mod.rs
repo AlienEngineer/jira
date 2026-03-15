@@ -6,6 +6,7 @@ pub mod fields;
 pub mod lists;
 pub mod logout;
 pub mod new_issue;
+pub mod pbi;
 pub mod raw;
 pub mod sprint;
 pub mod transitions;

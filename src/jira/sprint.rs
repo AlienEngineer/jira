@@ -2,7 +2,7 @@ use crate::api::JsonValueExt;
 use crate::config::{self, get_alias};
 use crate::ioc::interface::Interface;
 use crate::jira::api::JiraApi;
-use chrono::{DateTime, Utc};
+use crate::jira::pbi::Pbi;
 use std::error::Error;
 use std::fs;
 use std::io::{Read, Write};
@@ -48,6 +48,7 @@ impl DefaultSprintService {
                     loaded: false,
                     in_progress_at: last_in_progress_at(&issue["changelog"]),
                     resolved_at: fields["resolutiondate"].as_str().map(|s| s.to_string()),
+                    raw: fields.clone().dump(),
                 });
             }
         }
@@ -114,55 +115,6 @@ impl SprintService for DefaultSprintService {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Pbi {
-    pub key: String,
-    pub summary: String,
-    pub status: String,
-    pub assignee: String,
-    pub issue_type: String,
-    pub description: Option<String>,
-    pub priority: Option<String>,
-    pub story_points: Option<f64>,
-    pub labels: Vec<String>,
-    pub loaded: bool,
-    pub in_progress_at: Option<String>,
-    pub resolved_at: Option<String>,
-}
-
-impl Pbi {
-    pub fn elapsed_minutes(&self) -> Option<i64> {
-        let s = self.status.to_lowercase();
-        if s == "new" || s == "open" {
-            return None;
-        }
-        let started = self
-            .in_progress_at
-            .as_deref()
-            .and_then(parse_jira_datetime)?;
-        let end = if self.is_done() {
-            self.resolved_at
-                .as_deref()
-                .and_then(parse_jira_datetime)
-                .unwrap_or_else(Utc::now)
-        } else {
-            Utc::now()
-        };
-        Some((end - started).num_minutes().max(0))
-    }
-
-    fn is_done(&self) -> bool {
-        let status = self.status.to_lowercase();
-        status.contains("closed") || status.contains("resolved")
-    }
-}
-
-fn parse_jira_datetime(s: &str) -> Option<DateTime<Utc>> {
-    DateTime::parse_from_str(s, "%FT%T%.f%z")
-        .ok()
-        .map(|dt| dt.with_timezone(&Utc))
-}
-
 fn last_in_progress_at(changelog: &json::JsonValue) -> Option<String> {
     let mut last: Option<String> = None;
     for history in changelog["histories"].members() {
@@ -178,19 +130,6 @@ fn last_in_progress_at(changelog: &json::JsonValue) -> Option<String> {
         }
     }
     last
-}
-
-pub fn pbi_elapsed_display(pbi: &Pbi) -> String {
-    if let Some(minutes) = pbi.elapsed_minutes() {
-        if minutes < 60 {
-            return format!("{}m", minutes);
-        } else if minutes < 1440 {
-            return format!("{}h", minutes / 60);
-        } else {
-            return format!("{}d", minutes / 1440);
-        }
-    }
-    "".to_string()
 }
 
 #[derive(Debug, Clone)]
@@ -255,6 +194,7 @@ pub fn load_sprint_cache(board_id: &str) -> Option<Sprint> {
             loaded: item["loaded"].as_bool().unwrap_or(false),
             in_progress_at: item["in_progress_at"].as_str().map(|s| s.to_string()),
             resolved_at: item["resolved_at"].as_str().map(|s| s.to_string()),
+            raw: item.dump(),
         });
     }
 

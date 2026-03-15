@@ -13,6 +13,33 @@ pub mod subcommands;
 pub mod ui;
 
 fn main() -> prelude::Result<()> {
+    init_ioc_container();
+
+    config::ensure_config()?;
+    let app = App::new("JIRA")
+        .version(crate_version!())
+        .author("Alien Engineer <aimirim.software@gmail.com>")
+        .about("This is a command line application that can be used as a personal productivity tool for interacting with JIRA")
+        .subcommand(subcommands::transition::subcommand())
+        .subcommand(subcommands::list::subcommand())
+        .subcommand(subcommands::detail::subcommand())
+        .subcommand(subcommands::alias::subcommand())
+        .subcommand(subcommands::fields::subcommand())
+        .subcommand(subcommands::assign::subcommand())
+        .subcommand(subcommands::comments::subcommand())
+        .subcommand(subcommands::update::subcommand())
+        .subcommand(subcommands::autocompletion::subcommand())
+        .subcommand(subcommands::new_subcommand::subcommand())
+        .subcommand(subcommands::logout::subcommand())
+        .subcommand(subcommands::config::subcommand())
+        .subcommand(subcommands::sprint::subcommand())
+        .subcommand(subcommands::raw::subcommand())
+        .subcommand(subcommands::plugin::subcommand());
+    subcommands::handle_matches(app);
+    Ok(())
+}
+
+fn init_ioc_container() {
     let mut ioc = ioc::Ioc::new();
     register_service!(ioc, jira::api::JiraApi, jira::api::ConfigJiraApi);
     register_service!(ioc, jira::user::CurrentUserService, {
@@ -71,27 +98,4 @@ fn main() -> prelude::Result<()> {
     if ioc::set_global(ioc).is_err() {
         panic!("global IoC container should only be initialized once");
     }
-
-    config::ensure_config()?;
-    let app = App::new("JIRA")
-        .version(crate_version!())
-        .author("Alien Engineer <aimirim.software@gmail.com>")
-        .about("This is a command line application that can be used as a personal productivity tool for interacting with JIRA")
-        .subcommand(subcommands::transition::subcommand())
-        .subcommand(subcommands::list::subcommand())
-        .subcommand(subcommands::detail::subcommand())
-        .subcommand(subcommands::alias::subcommand())
-        .subcommand(subcommands::fields::subcommand())
-        .subcommand(subcommands::assign::subcommand())
-        .subcommand(subcommands::comments::subcommand())
-        .subcommand(subcommands::update::subcommand())
-        .subcommand(subcommands::autocompletion::subcommand())
-        .subcommand(subcommands::new_subcommand::subcommand())
-        .subcommand(subcommands::logout::subcommand())
-        .subcommand(subcommands::config::subcommand())
-        .subcommand(subcommands::sprint::subcommand())
-        .subcommand(subcommands::raw::subcommand())
-        .subcommand(subcommands::plugin::subcommand());
-    subcommands::handle_matches(app);
-    Ok(())
 }
