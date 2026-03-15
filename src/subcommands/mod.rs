@@ -60,7 +60,8 @@ pub fn handle_matches(mut app: App) {
             eprintln!(
                 "Invalid shell name passed. Only bash, fish, zsh, powershell, elvish are allowed."
             );
-            process::exit(1);        }
+            process::exit(1);
+        }
         let shell = shell_parse.unwrap();
         app.gen_completions_to("jira", shell, &mut io::stdout());
     } else if let Some(config_matches) = matches.subcommand_matches("config") {

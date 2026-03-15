@@ -11,10 +11,10 @@ use ratatui::{
 use std::sync::{mpsc, Arc};
 use std::thread;
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-use std::process::Command;
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
 use std::io::{Error, ErrorKind};
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+use std::process::Command;
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
 use std::process::ExitStatus;
 
@@ -216,10 +216,8 @@ impl SprintTable {
         #[cfg(target_os = "linux")]
         let result = Command::new("xdg-open").arg(&url).status();
         #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-        let result: Result<ExitStatus, Error> = Err(Error::new(
-            ErrorKind::Unsupported,
-            "unsupported platform",
-        ));
+        let result: Result<ExitStatus, Error> =
+            Err(Error::new(ErrorKind::Unsupported, "unsupported platform"));
 
         match result {
             Ok(_) => vec![TableAction::SetStatus(format!("Opened {url}"))],
