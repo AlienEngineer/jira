@@ -202,6 +202,7 @@ impl SprintApp {
         }
     }
 
+    // TODO: duplicated with sprint_list, maybe move to util?
     fn open_raw_in_editor(&self, pbi: &Pbi) {
         let json = pbi.raw.clone();
         let key = pbi.key.as_str();

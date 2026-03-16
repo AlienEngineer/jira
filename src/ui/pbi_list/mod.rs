@@ -17,6 +17,10 @@ use ratatui::{
     text::{Line, Span},
     DefaultTerminal, Frame,
 };
+
+use std::env;
+use std::fs;
+use std::process::Command;
 use std::sync::{mpsc, Arc};
 use std::thread;
 use std::time::Duration;
@@ -70,12 +74,40 @@ impl PbiListApp {
         while !self.exit {
             self.process_bg_messages();
 
+            if let Some(pbi) = self.selected_pbi.take() {
+                ratatui::restore();
+                self.open_raw_in_editor(&pbi);
+                *terminal = ratatui::init();
+            }
+
             terminal.draw(|frame| self.draw(frame))?;
             if event::poll(Duration::from_millis(50))? {
                 self.handle_events()?;
             }
         }
         Ok(())
+    }
+
+    // TODO: duplicated with sprint_list, maybe move to util?
+    fn open_raw_in_editor(&self, pbi: &Pbi) {
+        let json = pbi.raw.clone();
+        let key = pbi.key.as_str();
+        let tmp_path = env::temp_dir().join(format!("jira_raw_{key}.json"));
+        if let Err(e) = fs::write(&tmp_path, &json) {
+            eprintln!("Failed to write temp file: {e}");
+            return;
+        }
+
+        let editor = env::var("VISUAL")
+            .or_else(|_| env::var("EDITOR"))
+            .unwrap_or_else(|_| "vi".to_string());
+
+        let _ = Command::new(&editor)
+            .arg(&tmp_path)
+            .status()
+            .map_err(|e| eprintln!("Failed to open editor '{editor}': {e}"));
+
+        let _ = fs::remove_file(&tmp_path);
     }
 
     // ── Background fetch ──────────────────────────────────────────────────────
