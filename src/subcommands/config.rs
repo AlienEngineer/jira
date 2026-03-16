@@ -40,7 +40,7 @@ fn show_config() {
             println!("{:<20} {}", "email:", c.email);
             println!("{:<20} {}", "auth_mode:", c.auth_mode);
             println!("{:<20} {}", "account_id:", c.account_id);
-            println!("{:<20} {}", "board_id:", c.board_id.unwrap_or_default());
+            println!("{:<20} {}", "board-id:", c.board_id.unwrap_or_default());
             println!(
                 "{:<20} {}",
                 "jira_version:",
