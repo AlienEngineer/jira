@@ -5,6 +5,7 @@ use std::io::Read;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use crate::config;
 use crate::ioc;
 use crate::jira;
 use crate::prelude::Result;
@@ -23,6 +24,7 @@ pub struct JiraConfig {
     pub alias: HashMap<String, String>,
     /// Transitions map: project code → (transition name → transition ID).
     pub transitions: HashMap<String, HashMap<String, i64>>,
+    pub path: String,
 }
 
 impl JiraConfig {
@@ -55,6 +57,10 @@ impl JiraConfig {
             jira_version: raw["jira-version"].as_str().map(str::to_string),
             alias,
             transitions,
+            path: raw["path"]
+                .as_str()
+                .unwrap_or(get_config_file_name().as_str())
+                .to_string(),
         })
     }
 }
@@ -71,6 +77,7 @@ impl Default for JiraConfig {
             jira_version: None,
             alias: HashMap::new(),
             transitions: HashMap::new(),
+            path: String::new(),
         }
     }
 }
@@ -142,7 +149,7 @@ fn check_config_exists() -> Result<bool> {
 }
 
 pub fn ensure_account_id() {
-    let account_id = get_config("account-id".to_string());
+    let account_id = config::get_account_id();
     if account_id.is_empty() {
         match crate::get_instance!(ioc::global(), jira::user::CurrentUserService)
             .fetch_current_account_id()
@@ -203,7 +210,8 @@ fn create_config() -> Result<()> {
         auth_mode: auth_mode,
         "account-id": "",
         alias: {},
-        transitions: {}
+        transitions: {},
+        path: get_config_file_name(),
     };
 
     write_config(configuration);
@@ -267,18 +275,72 @@ pub fn parse_config() -> json::JsonValue {
     json::parse(&contents).unwrap()
 }
 
-/// Get the configuration for specified key. If the key does not exist, empty string is returned.
-///
-/// # Arguments:
-/// * config - Configuration key.
-///
-/// # Example:
-/// ```
-/// let value = get_config("email".to_string());
-/// ```
-///
-pub fn get_config(config: String) -> String {
-    let config_value = &parse_config()[config];
+pub fn get_board_id() -> String {
+    let config_value = &parse_config()["board-id"];
+    if config_value.is_string() {
+        String::from(config_value.as_str().unwrap())
+    } else {
+        String::from("")
+    }
+}
+
+pub fn get_account_id() -> String {
+    let config_value = &parse_config()["account-id"];
+    if config_value.is_string() {
+        return String::from(config_value.as_str().unwrap());
+    }
+    String::from("")
+}
+
+pub fn get_base_url() -> String {
+    let config = parse_config();
+    let url = &mut config["namespace"]
+        .as_str()
+        .unwrap_or_default()
+        .trim_end_matches('/');
+
+    if url.is_empty() {
+        return String::from("");
+    }
+
+    if url.starts_with("http://") || url.starts_with("https://") {
+        url.to_string()
+    } else {
+        format!("https://{}", url)
+    }
+}
+
+pub fn get_email() -> String {
+    let config_value = &parse_config()["email"];
+    if config_value.is_string() {
+        return String::from(config_value.as_str().unwrap());
+    }
+    String::from("")
+}
+
+pub fn get_token() -> String {
+    let config_value = &parse_config()["token"];
+    if config_value.is_string() {
+        return String::from(config_value.as_str().unwrap());
+    }
+    String::from("")
+}
+
+pub fn get_auth_mode() -> String {
+    let config_value = &parse_config()["auth_mode"];
+    if config_value.is_string() {
+        return String::from(config_value.as_str().unwrap());
+    }
+    String::from("Basic")
+}
+
+pub fn get_version() -> String {
+    let config_value = &parse_config()["jira-version"];
+    if config_value.is_string() {
+        return String::from(config_value.as_str().unwrap());
+    }
+    // fallback for older config files
+    let config_value = &parse_config()["version"];
     if config_value.is_string() {
         return String::from(config_value.as_str().unwrap());
     }

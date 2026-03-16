@@ -126,7 +126,7 @@ pub fn handle_sprint(_matches: &ArgMatches) {
     use crate::config;
     use crate::ui::sprint_list::SprintApp;
 
-    let board_id = config::get_config("board-id".to_string());
+    let board_id = config::get_board_id();
     if board_id.is_empty() {
         eprintln!(
             "No board_id found in configuration.\n\

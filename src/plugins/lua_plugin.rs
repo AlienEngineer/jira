@@ -38,7 +38,7 @@ fn inject_context(lua: &Lua, ctx: &JiraContext) -> Result<()> {
     config_tbl.set("auth_mode", ctx.config.auth_mode.clone())?;
     config_tbl.set("account-id", ctx.config.account_id.clone())?;
     config_tbl.set("board-id", ctx.config.board_id.clone())?;
-    config_tbl.set("jira_version", ctx.config.jira_version.clone())?;
+    config_tbl.set("jira-version", ctx.config.jira_version.clone())?;
     config_tbl.set("alias", ctx.config.alias.clone())?;
     config_tbl.set("transitions", ctx.config.transitions.clone())?;
     root.set("config", config_tbl)?;
@@ -74,7 +74,7 @@ fn pbi_to_lua(lua: &Lua, pbi: &Pbi) -> Result<Table> {
     tbl.set("labels", pbi.labels.clone())?;
     tbl.set("in_progress_at", pbi.in_progress_at.clone())?;
     tbl.set("resolved_at", pbi.resolved_at.clone())?;
-    tbl.set("elapsed_minutes", pbi.elapsed_minutes().unwrap())?;
+    tbl.set("elapsed_minutes", pbi.elapsed_minutes())?;
     Ok(tbl)
 }
 

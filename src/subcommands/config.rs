@@ -74,6 +74,7 @@ fn show_config() {
                     }
                 }
             }
+            println!("{:<20} {}", "config file:", c.path);
         }
     }
 }
@@ -110,11 +111,11 @@ pub fn handle(matches: &clap::ArgMatches) {
     match key {
         "jira-version" => match parse_jira_version(value) {
             Some(version) => {
-                update_config("version".to_string(), version.to_string());
+                update_config("jira-version".to_string(), version.to_string());
                 println!("Jira API version set to {version}.");
             }
             None => {
-                eprintln!("Invalid jira-version '{value}'. Accepted values: 2, v2, 3, v3.");
+                eprintln!("Invalid jira-version '{value}'. Accepted values: 2, 3.");
                 process::exit(1);
             }
         },

@@ -167,7 +167,7 @@ impl IssueCreationService for DefaultIssueCreationService {
             self.metadata_service
                 .get_account_id(assignee_query.to_string())
         } else {
-            config::get_config("account-id".to_string())
+            config::get_account_id()
         };
         if assignee.is_empty() {
             eprintln!("Please provide appropriate user email to continue.");

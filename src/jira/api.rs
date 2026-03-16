@@ -10,12 +10,7 @@ pub trait JiraApi: Interface {
         self.get(endpoint, 2)
     }
     fn get_v3(&self, endpoint: &str) -> Result<json::JsonValue, Box<dyn Error>> {
-        self.get(
-            endpoint,
-            config::get_config("version".to_string())
-                .parse::<u8>()
-                .unwrap_or(3),
-        )
+        self.get(endpoint, config::get_version().parse::<u8>().unwrap_or(3))
     }
     fn post(
         &self,
@@ -68,18 +63,13 @@ impl JiraApi for ConfigJiraApi {
 }
 
 fn build_api_request(endpoint: &str, json_value: json::JsonValue, version: u8) -> ApiRequest {
-    let auth_mode = config::get_config("auth_mode".to_string());
     ApiRequest {
         url: endpoint.to_string(),
-        username: config::get_config("email".to_string()),
-        password: config::get_config("token".to_string()),
+        username: config::get_email(),
+        password: config::get_token(),
         json: json_value,
-        namespace: config::get_config("namespace".to_string()),
+        namespace: config::get_base_url(),
         version,
-        auth_mode: if auth_mode.is_empty() {
-            "Basic".to_string()
-        } else {
-            auth_mode
-        },
+        auth_mode: config::get_auth_mode(),
     }
 }
