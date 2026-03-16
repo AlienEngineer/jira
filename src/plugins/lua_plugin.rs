@@ -37,7 +37,7 @@ fn inject_context(lua: &Lua, ctx: &JiraContext) -> Result<()> {
     config_tbl.set("token", ctx.config.token.clone())?;
     config_tbl.set("auth_mode", ctx.config.auth_mode.clone())?;
     config_tbl.set("account_id", ctx.config.account_id.clone())?;
-    config_tbl.set("board_id", ctx.config.board_id.clone())?;
+    config_tbl.set("board-id", ctx.config.board_id.clone())?;
     config_tbl.set("jira_version", ctx.config.jira_version.clone())?;
     config_tbl.set("alias", ctx.config.alias.clone())?;
     config_tbl.set("transitions", ctx.config.transitions.clone())?;
@@ -48,7 +48,7 @@ fn inject_context(lua: &Lua, ctx: &JiraContext) -> Result<()> {
     sprint_tbl.set("name", ctx.sprint.name.clone())?;
     sprint_tbl.set("goal", ctx.sprint.goal.clone())?;
     sprint_tbl.set("end_date", ctx.sprint.end_date.clone())?;
-    sprint_tbl.set("board_id", ctx.sprint.board_id.clone())?;
+    sprint_tbl.set("board-id", ctx.sprint.board_id.clone())?;
     let pbis_tbl = lua.create_table()?;
     for (i, pbi) in ctx.sprint.pbis.iter().enumerate() {
         pbis_tbl.set(i + 1, pbi_to_lua(lua, pbi)?)?;

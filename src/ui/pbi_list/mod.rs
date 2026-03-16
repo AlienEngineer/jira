@@ -47,6 +47,7 @@ pub struct PbiListApp {
     active_view: ActiveView,
     exit: bool,
     bg_rx: Option<mpsc::Receiver<BgMsg>>,
+    selected_pbi: Option<Pbi>,
 }
 
 impl PbiListApp {
@@ -56,6 +57,7 @@ impl PbiListApp {
             table,
             issues,
             filter,
+            selected_pbi: None,
             list_service,
             footer: Footer::new(),
             active_view: ActiveView::List,
@@ -226,7 +228,7 @@ impl PbiListApp {
                 self.active_view = ActiveView::List;
             }
             Some(PbiDetailAction::ShowRaw) => {
-                // raw view not wired in the list TUI for now
+                self.selected_pbi = Some(detail.pbi.clone());
             }
             None => {}
         }

@@ -51,7 +51,7 @@ impl JiraConfig {
             token: raw["token"].as_str().unwrap_or("").to_string(),
             auth_mode: raw["auth_mode"].as_str().unwrap_or("Basic").to_string(),
             account_id: raw["account_id"].as_str().unwrap_or("").to_string(),
-            board_id: raw["board_id"].as_str().map(str::to_string),
+            board_id: raw["board-id"].as_str().map(str::to_string),
             jira_version: raw["jira-version"].as_str().map(str::to_string),
             alias,
             transitions,
@@ -199,21 +199,18 @@ fn create_config() -> Result<()> {
         let b64 = base64::encode(user_password);
         (email.trim().to_string(), b64)
     };
-    let account_id = crate::get_instance!(ioc::global(), jira::user::CurrentUserService)
-        .fetch_current_account_id()
-        .unwrap_or_default();
-
     let configuration = json::object! {
         namespace: namespace.trim(),
         email: email.as_str(),
         token: token.as_str(),
         auth_mode: auth_mode,
-        account_id: account_id,
+        account_id: "",
         alias: {},
         transitions: {}
     };
 
     write_config(configuration);
+
     Ok(())
 }
 

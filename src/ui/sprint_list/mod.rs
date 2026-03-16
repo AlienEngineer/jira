@@ -48,9 +48,6 @@ pub struct SprintApp {
     exit: bool,
     active_view: ActiveView,
     selected_pbi: Option<Pbi>,
-    /// Key of a PBI whose raw JSON should be displayed on the next loop tick.
-    pending_raw: Option<String>,
-    /// Path to a plugin file to open in the editor on the next loop tick.
     pending_plugin_edit: Option<PathBuf>,
 }
 
@@ -63,7 +60,6 @@ impl SprintApp {
             footer: Footer::new(),
             exit: false,
             active_view: ActiveView::Sprint,
-            pending_raw: None,
             pending_plugin_edit: None,
             selected_pbi: None,
         }
@@ -185,9 +181,7 @@ impl SprintApp {
                 self.active_view = ActiveView::Sprint;
             }
             Some(PbiDetailAction::ShowRaw) => {
-                self.pending_raw = Some(detail.pbi.key.clone());
                 self.selected_pbi = Some(detail.pbi.clone()); // unsure if this is necessary as the
-                                                              // detail view already holds the PBI object.
             }
             None => {}
         }

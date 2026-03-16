@@ -126,13 +126,13 @@ pub fn handle_sprint(_matches: &ArgMatches) {
     use crate::config;
     use crate::ui::sprint_list::SprintApp;
 
-    let board_id = config::get_config("board_id".to_string());
+    let board_id = config::get_config("board-id".to_string());
     if board_id.is_empty() {
         eprintln!(
             "No board_id found in configuration.\n\
              Please set it first with:\n\
              \n\
-             jira config set board_id <YOUR_BOARD_ID>"
+             jira config board-id <YOUR_BOARD_ID>"
         );
         std::process::exit(1);
     }
