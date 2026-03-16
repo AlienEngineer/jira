@@ -48,13 +48,41 @@ pub fn handle_fields_matches(matches: &ArgMatches) {
 }
 
 pub fn handle_list_matches(matches: &ArgMatches) {
-    let issues = service::<dyn lists::ListService>().list_issues(matches);
-    let display = matches
-        .value_of("display")
-        .unwrap_or("key,summary,status,assignee");
-    let columns: Vec<&str> = display.trim().split(',').collect();
-    let show_json = matches.is_present("json");
-    crate::ui::pbi_list::display_issues(&issues, &columns, show_json);
+    use crate::ui::pbi_list;
+
+    // --json: skip the TUI and print structured output
+    if matches.is_present("json") {
+        let issues = service::<dyn lists::ListService>().list_issues(matches);
+        let display = matches
+            .value_of("display")
+            .unwrap_or("key,summary,status,assignee");
+        let columns: Vec<&str> = display.trim().split(',').collect();
+        pbi_list::display_issues(&issues, &columns, true);
+        return;
+    }
+
+    let filter = lists::ListFilter::from_matches(matches);
+
+    if matches.is_present("alias") {
+        let alias_name = matches.value_of("alias").unwrap();
+        crate::config::set_alias(alias_name.to_string(), filter.to_jql());
+        println!("Current filter is now set with value {alias_name}");
+        println!("You can use jira list --jql \"{alias_name}\" to reuse this filter.");
+    }
+
+    let list_service = service::<dyn lists::ListService>();
+    let issues = list_service.fetch_with_filter(&filter).unwrap_or_else(|e| {
+        eprintln!("Error fetching issues: {e}");
+        std::process::exit(1);
+    });
+
+    let mut terminal = ratatui::init();
+    let result = pbi_list::PbiListApp::new(issues, filter, list_service).run(&mut terminal);
+    ratatui::restore();
+    if let Err(e) = result {
+        eprintln!("TUI error: {e}");
+        std::process::exit(1);
+    }
 }
 
 pub fn handle_detail_matches(matches: &ArgMatches) {
@@ -111,7 +139,6 @@ pub fn handle_sprint(_matches: &ArgMatches) {
 
     config::ensure_account_id();
     let sprint_service = service::<dyn sprint::SprintService>();
-    let raw_service = service::<dyn raw::RawService>();
 
     // Try the on-disk cache first; fall back to a fresh API fetch
     let sprint = if let Some(cached) = sprint::load_sprint_cache(&board_id) {
@@ -132,7 +159,7 @@ pub fn handle_sprint(_matches: &ArgMatches) {
     };
 
     let mut terminal = ratatui::init();
-    let result = SprintApp::new(sprint, sprint_service, raw_service).run(&mut terminal);
+    let result = SprintApp::new(sprint, sprint_service).run(&mut terminal);
     ratatui::restore();
     if let Err(e) = result {
         eprintln!("TUI error: {e}");

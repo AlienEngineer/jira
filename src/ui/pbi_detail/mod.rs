@@ -37,7 +37,7 @@ impl PbiDetailView {
     pub fn handle_key(&mut self, key: KeyCode) -> Option<PbiDetailAction> {
         match key {
             KeyCode::Left | KeyCode::Char('h') | KeyCode::Esc => Some(PbiDetailAction::Back),
-            KeyCode::Char('r') | KeyCode::Char('R') => Some(PbiDetailAction::ShowRaw),
+            KeyCode::Char('r') => Some(PbiDetailAction::ShowRaw),
             KeyCode::Down | KeyCode::Char('j') => {
                 self.desc_scroll = self.desc_scroll.saturating_add(1);
                 None

@@ -8,7 +8,7 @@ use progress_block::{ProgressBlock, SprintProgressData};
 use sprint_goal::SprintGoalWidget;
 use sprint_table::{SprintTable, TableAction};
 
-use crate::jira::raw::RawService;
+use crate::jira::pbi::Pbi;
 use crate::jira::sprint::{self, Sprint, SprintService};
 use crate::prelude::Result;
 use crate::ui::pbi_detail::{PbiDetailAction, PbiDetailView};
@@ -43,11 +43,11 @@ enum ActiveView {
 pub struct SprintApp {
     goal: SprintGoalWidget,
     table: SprintTable,
-    raw_service: Arc<dyn RawService>,
     progress: ProgressBlock,
     footer: Footer,
     exit: bool,
     active_view: ActiveView,
+    selected_pbi: Option<Pbi>,
     /// Key of a PBI whose raw JSON should be displayed on the next loop tick.
     pending_raw: Option<String>,
     /// Path to a plugin file to open in the editor on the next loop tick.
@@ -55,21 +55,17 @@ pub struct SprintApp {
 }
 
 impl SprintApp {
-    pub fn new(
-        sprint: Sprint,
-        sprint_service: Arc<dyn SprintService>,
-        raw_service: Arc<dyn RawService>,
-    ) -> Self {
+    pub fn new(sprint: Sprint, sprint_service: Arc<dyn SprintService>) -> Self {
         Self {
             goal: SprintGoalWidget::new(sprint.name.clone(), sprint.goal.clone()),
             table: SprintTable::new(sprint, sprint_service),
-            raw_service,
             progress: ProgressBlock::new(),
             footer: Footer::new(),
             exit: false,
             active_view: ActiveView::Sprint,
             pending_raw: None,
             pending_plugin_edit: None,
+            selected_pbi: None,
         }
     }
 
@@ -77,12 +73,9 @@ impl SprintApp {
         while !self.exit {
             self.process_background_messages();
 
-            // Handle a pending raw-JSON edit: suspend the TUI, write JSON to a
-            // temp file, open it in $VISUAL/$EDITOR (falling back to vi), wait
-            // for the editor to close, delete the temp file, then reinitialise.
-            if let Some(key) = self.pending_raw.take() {
+            if let Some(pbi) = self.selected_pbi.take() {
                 ratatui::restore();
-                self.open_raw_in_editor(&key);
+                self.open_raw_in_editor(&pbi);
                 *terminal = ratatui::init();
             }
 
@@ -193,6 +186,8 @@ impl SprintApp {
             }
             Some(PbiDetailAction::ShowRaw) => {
                 self.pending_raw = Some(detail.pbi.key.clone());
+                self.selected_pbi = Some(detail.pbi.clone()); // unsure if this is necessary as the
+                                                              // detail view already holds the PBI object.
             }
             None => {}
         }
@@ -213,15 +208,9 @@ impl SprintApp {
         }
     }
 
-    fn open_raw_in_editor(&self, key: &str) {
-        let json = match self.raw_service.fetch_raw_issue(key) {
-            Ok(v) => json::stringify_pretty(v, 2),
-            Err(e) => {
-                eprintln!("Error fetching {key}: {e}");
-                return;
-            }
-        };
-
+    fn open_raw_in_editor(&self, pbi: &Pbi) {
+        let json = pbi.raw.clone();
+        let key = pbi.key.as_str();
         let tmp_path = env::temp_dir().join(format!("jira_raw_{key}.json"));
         if let Err(e) = fs::write(&tmp_path, &json) {
             eprintln!("Failed to write temp file: {e}");

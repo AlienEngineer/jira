@@ -48,7 +48,7 @@ impl DefaultSprintService {
                     loaded: false,
                     in_progress_at: last_in_progress_at(&issue["changelog"]),
                     resolved_at: fields["resolutiondate"].as_str().map(|s| s.to_string()),
-                    raw: fields.clone().dump(),
+                    raw: json::stringify_pretty::<json::JsonValue>(fields.clone(), 2),
                     resolution: fields["resolution"]["name"].as_str().map(|s| s.to_string()),
                     components: fields["components"]
                         .members()
@@ -202,7 +202,7 @@ pub fn load_sprint_cache(board_id: &str) -> Option<Sprint> {
             loaded: item["loaded"].as_bool().unwrap_or(false),
             in_progress_at: item["in_progress_at"].as_str().map(|s| s.to_string()),
             resolved_at: item["resolved_at"].as_str().map(|s| s.to_string()),
-            raw: item.dump(),
+            raw: item["raw"].as_string_or(""),
             resolution: item["resolution"].as_str().map(|s| s.to_string()),
             components: item["components"]
                 .members()
@@ -248,7 +248,7 @@ fn convert_pbis_to_json(pbis: &[Pbi]) -> json::JsonValue {
         for label in &pbi.labels {
             let _ = labels_json.push(label.as_str());
         }
-        let mut obj = json::object! {
+        let obj = json::object! {
             "key": pbi.key.as_str(),
             "summary": pbi.summary.as_str(),
             "status": pbi.status.as_str(),
@@ -256,27 +256,28 @@ fn convert_pbis_to_json(pbis: &[Pbi]) -> json::JsonValue {
             "issue_type": pbi.issue_type.as_str(),
             "loaded": pbi.loaded,
             "labels": labels_json,
+            "description": match &pbi.description {
+                Some(d) => json::JsonValue::String(d.clone()),
+                None => json::JsonValue::Null,
+            },
+            "priority": match &pbi.priority {
+                Some(p) => json::JsonValue::String(p.clone()),
+                None => json::JsonValue::Null,
+            },
+            "story_points": match pbi.story_points {
+                Some(sp) => json::JsonValue::Number(sp.into()),
+                None => json::JsonValue::Null,
+            },
+            "in_progress_at": match &pbi.in_progress_at {
+                Some(ts) => json::JsonValue::String(ts.clone()),
+                None => json::JsonValue::Null,
+            },
+            "resolved_at": match &pbi.resolved_at {
+                Some(ts) => json::JsonValue::String(ts.clone()),
+                None => json::JsonValue::Null,
+            },
         };
-        obj["description"] = match &pbi.description {
-            Some(d) => json::JsonValue::String(d.clone()),
-            None => json::JsonValue::Null,
-        };
-        obj["priority"] = match &pbi.priority {
-            Some(p) => json::JsonValue::String(p.clone()),
-            None => json::JsonValue::Null,
-        };
-        obj["story_points"] = match pbi.story_points {
-            Some(sp) => json::JsonValue::Number(sp.into()),
-            None => json::JsonValue::Null,
-        };
-        obj["in_progress_at"] = match &pbi.in_progress_at {
-            Some(ts) => json::JsonValue::String(ts.clone()),
-            None => json::JsonValue::Null,
-        };
-        obj["resolved_at"] = match &pbi.resolved_at {
-            Some(ts) => json::JsonValue::String(ts.clone()),
-            None => json::JsonValue::Null,
-        };
+
         let _ = pbis_json.push(obj);
     }
     pbis_json

@@ -231,6 +231,11 @@ mod tests {
             in_progress_at: None,
             resolved_at: None,
             raw: "".to_string(),
+            resolution: None,
+            components: vec![],
+            creator: "".to_string(),
+            reporter: "".to_string(),
+            project: "".to_string(),
         };
 
         service

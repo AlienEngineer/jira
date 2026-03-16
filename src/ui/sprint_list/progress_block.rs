@@ -166,6 +166,11 @@ mod tests {
             resolved_at: None,
             loaded: false,
             raw: "".into(),
+            resolution: None,
+            components: vec![],
+            creator: "".into(),
+            reporter: "".into(),
+            project: "".into(),
         }
     }
 

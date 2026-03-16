@@ -189,6 +189,11 @@ mod test {
             in_progress_at: in_progress_at.map(|s| s.to_string()),
             resolved_at: resolved_at.map(|s| s.to_string()),
             raw: "".to_string(),
+            resolution: None,
+            components: vec![],
+            creator: "".to_string(),
+            reporter: "".to_string(),
+            project: "".to_string(),
         }
     }
 }
