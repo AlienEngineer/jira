@@ -1,6 +1,6 @@
 [package]
 name = "jira"
-version = "2.4.13"
+version = "2.4.14"
 authors = ["alienengineer"]
 edition = "2018"
 description = "This is a command line application that can be used as a personal productivity tool for interacting with JIRA"
