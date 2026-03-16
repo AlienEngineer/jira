@@ -36,7 +36,7 @@ fn inject_context(lua: &Lua, ctx: &JiraContext) -> Result<()> {
     config_tbl.set("email", ctx.config.email.clone())?;
     config_tbl.set("token", ctx.config.token.clone())?;
     config_tbl.set("auth_mode", ctx.config.auth_mode.clone())?;
-    config_tbl.set("account_id", ctx.config.account_id.clone())?;
+    config_tbl.set("account-id", ctx.config.account_id.clone())?;
     config_tbl.set("board-id", ctx.config.board_id.clone())?;
     config_tbl.set("jira_version", ctx.config.jira_version.clone())?;
     config_tbl.set("alias", ctx.config.alias.clone())?;

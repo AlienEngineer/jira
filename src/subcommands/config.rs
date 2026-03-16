@@ -39,11 +39,11 @@ fn show_config() {
             println!("{:<20} {}", "namespace:", c.namespace);
             println!("{:<20} {}", "email:", c.email);
             println!("{:<20} {}", "auth_mode:", c.auth_mode);
-            println!("{:<20} {}", "account_id:", c.account_id);
+            println!("{:<20} {}", "account-id:", c.account_id);
             println!("{:<20} {}", "board-id:", c.board_id.unwrap_or_default());
             println!(
                 "{:<20} {}",
-                "jira_version:",
+                "jira-version:",
                 c.jira_version.unwrap_or_default()
             );
             println!("{:<20} {}", "token:", mask_token(&c.token));
@@ -118,6 +118,10 @@ pub fn handle(matches: &clap::ArgMatches) {
                 process::exit(1);
             }
         },
+        "account-id" => {
+            update_config("account-id".to_string(), value.to_string());
+            println!("Account ID updated to {value}");
+        }
         "board-id" => {
             update_config("board-id".to_string(), value.to_string());
             println!("Board id updated to {value}");

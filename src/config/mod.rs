@@ -50,7 +50,7 @@ impl JiraConfig {
             email: raw["email"].as_str().unwrap_or("").to_string(),
             token: raw["token"].as_str().unwrap_or("").to_string(),
             auth_mode: raw["auth_mode"].as_str().unwrap_or("Basic").to_string(),
-            account_id: raw["account_id"].as_str().unwrap_or("").to_string(),
+            account_id: raw["account-id"].as_str().unwrap_or("").to_string(),
             board_id: raw["board-id"].as_str().map(str::to_string),
             jira_version: raw["jira-version"].as_str().map(str::to_string),
             alias,
@@ -141,22 +141,19 @@ fn check_config_exists() -> Result<bool> {
     Ok(fs::metadata(get_config_file_name()).is_ok())
 }
 
-/// Ensure `account_id` is populated in the config. If it is empty, attempt to
-/// fetch it via the API and persist it. Call this only in commands that actually
-/// need the account ID (e.g. sprint view, assign).
 pub fn ensure_account_id() {
-    let account_id = get_config("account_id".to_string());
+    let account_id = get_config("account-id".to_string());
     if account_id.is_empty() {
         match crate::get_instance!(ioc::global(), jira::user::CurrentUserService)
             .fetch_current_account_id()
         {
             Some(id) => {
-                println!("Fetched account_id automatically: {id}");
-                update_config("account_id".to_string(), id);
+                println!("Fetched account-id automatically: {id}");
+                update_config("account-id".to_string(), id);
             }
             None => eprintln!(
-                "Warning: account_id is not set and could not be fetched automatically.\n\
-                 You can set it manually with: jira config account_id <your-id>"
+                "Warning: account-id is not set and could not be fetched automatically.\n\
+                 You can set it manually with: jira config account-id <your-id>"
             ),
         }
     }
@@ -204,7 +201,7 @@ fn create_config() -> Result<()> {
         email: email.as_str(),
         token: token.as_str(),
         auth_mode: auth_mode,
-        account_id: "",
+        "account-id": "",
         alias: {},
         transitions: {}
     };
