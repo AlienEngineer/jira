@@ -18,6 +18,7 @@ brew install jira
 ### Jira TUI
 <img width="849" height="482" alt="image" src="https://github.com/user-attachments/assets/c1b021a8-b9a8-448d-b4b1-3b0c1808ea10" />
 
+
 Aside from a cli for jira, this project also provides a TUI for jira. This is not meant to replace jira browser interface, but to complement it.
 
 The main objective is to have a quick sprint access with the possibility of custom automations via lua plugins.
