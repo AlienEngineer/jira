@@ -143,6 +143,7 @@ fn bundled_plugin_files() -> Vec<(&'static str, &'static [u8])> {
 fn install_plugin_files<I, N, C>(
     plugin_files: I,
     destination_dir: &Path,
+    force: bool,
 ) -> Result<PluginInstallSummary>
 where
     I: IntoIterator<Item = (N, C)>,
@@ -158,7 +159,7 @@ where
 
     for (file_name, contents) in plugin_files {
         let destination = destination_dir.join(file_name.as_ref());
-        if destination.exists() {
+        if destination.exists() && !force {
             summary.skipped += 1;
             continue;
         }
@@ -170,9 +171,9 @@ where
     Ok(summary)
 }
 
-pub fn install_bundled_plugins() -> Result<PluginInstallSummary> {
+pub fn install_bundled_plugins(force: bool) -> Result<PluginInstallSummary> {
     let destination_dir = PathBuf::from(get_plugins_path());
-    install_plugin_files(bundled_plugin_files(), &destination_dir)
+    install_plugin_files(bundled_plugin_files(), &destination_dir, force)
 }
 
 /// Execute all Lua plugins found in `~/plugins/`, injecting the full
@@ -230,6 +231,7 @@ mod tests {
                 ("start_beta.lua", &b"beta"[..]),
             ],
             &dir,
+            false,
         )
         .expect("plugin install should succeed");
 
@@ -264,6 +266,7 @@ mod tests {
                 ("start_beta.lua", &b"beta"[..]),
             ],
             &dir,
+            false,
         )
         .expect("plugin install should succeed");
 

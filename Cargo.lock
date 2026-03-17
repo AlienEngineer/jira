@@ -461,7 +461,7 @@ checksum = "92ecc6618181def0457392ccd0ee51198e065e016d1d527a7ac1b6dc7c1f09d2"
 
 [[package]]
 name = "jira"
-version = "2.4.17"
+version = "2.4.18"
 dependencies = [
  "base64",
  "chrono",

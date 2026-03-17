@@ -1,5 +1,5 @@
 use crate::plugins::lua_plugin::{get_plugins_path, install_bundled_plugins};
-use clap::{App, ArgMatches, SubCommand};
+use clap::{App, Arg, ArgMatches, SubCommand};
 use std::process;
 
 pub fn subcommand() -> App<'static, 'static> {
@@ -10,11 +10,19 @@ pub fn subcommand() -> App<'static, 'static> {
                 .alias("new")
                 .about("Install the bundled Lua plugins into your local plugins directory."),
         )
+        .arg(
+            Arg::with_name("force")
+                .short("f")
+                .long("force")
+                .help("Generates the plugins over existing plugins.")
+                .takes_value(false),
+        )
 }
 
 pub fn handle(matches: &ArgMatches) {
     if matches.subcommand_matches("generate").is_some() {
-        if let Err(e) = install_bundled_plugins().map(|summary| {
+        let force = matches.is_present("force");
+        if let Err(e) = install_bundled_plugins(force).map(|summary| {
             let plugins_path = get_plugins_path();
             println!(
                 "Bundled plugins synced to {plugins_path} (copied: {}, skipped: {}).",
