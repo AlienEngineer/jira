@@ -40,6 +40,8 @@ jira sprint
 
 #### Lua plugins
 
+To access the plugin list just press 'p' on the sprint list. Then if you wan't to edit one, just press enter and it will open your configured EDITOR.
+
 ```bash
 # generates default plugins that are executed when a sprint item is started. e.g. Assign to me, Change to In Progress status.
 jira plugin generate
