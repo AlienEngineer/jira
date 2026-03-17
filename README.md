@@ -15,6 +15,37 @@ brew tap alienengineer/jira
 brew install jira
 ```
 
+### Jira TUI
+
+Aside from a cli for jira, this project also provides a TUI for jira. This is not meant to replace jira browser interface, but to complement it.
+
+The main objective is to have a quick sprint access with the possibility of custom automations via lua plugins.
+
+#### Active sprint
+
+Before accessing your sprint there's a piece of information needed.
+
+```bash
+jira config board-id <your board id>
+```
+
+This allows for the tool to identify what is the actual active sprint to display. After this is done, it's just using the tool:
+
+```bash
+# open TUI for the sprint
+jira sprint
+```
+
+#### Lua plugins
+
+```bash
+# generates default plugins that are executed when a sprint item is started. e.g. Assign to me, Change to In Progress status.
+jira plugin generate
+
+# generates a template plugin called mycustomplugin
+jira plugin new mycustomplugin
+```
+
 ## Autocompletion Script
 
 To generate the autocompletion script, run:
