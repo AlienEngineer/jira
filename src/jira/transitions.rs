@@ -83,9 +83,11 @@ impl TransitionService for DefaultTransitionService {
                 "id": transition_code
             }
         };
-        let transitions_response =
-            self.jira_api
-                .post(&format!("issue/{ticket}/transitions"), json_object, 3);
+        let transitions_response = self.jira_api.post(
+            &format!("issue/{ticket}/transitions"),
+            json_object,
+            config::get_version().parse::<u8>().unwrap_or(3),
+        );
         if transitions_response.is_err() {
             eprintln!("Unable to perform transition.");
             std::process::exit(1);
