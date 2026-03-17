@@ -34,7 +34,8 @@ pub fn handle_transition_matches(matches: &ArgMatches) {
         transition_service.print_transition_lists(ticket.to_string());
     } else {
         let status = matches.value_of("STATUS").unwrap();
-        transition_service.move_ticket_status(ticket.to_string(), status.to_string());
+        let silent = matches.is_present("silent_mode");
+        transition_service.move_ticket_status(ticket.to_string(), status.to_string(), silent);
     }
 }
 

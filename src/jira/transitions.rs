@@ -6,7 +6,7 @@ use crate::jira::api::JiraApi;
 
 pub trait TransitionService: Interface {
     fn print_transition_lists(&self, ticket: String);
-    fn move_ticket_status(&self, ticket: String, status: String);
+    fn move_ticket_status(&self, ticket: String, status: String, silent: bool);
 }
 
 pub struct DefaultTransitionService {
@@ -71,10 +71,12 @@ impl TransitionService for DefaultTransitionService {
         }
     }
 
-    fn move_ticket_status(&self, ticket: String, status: String) {
+    fn move_ticket_status(&self, ticket: String, status: String, silent: bool) {
         let transition_options = self.get_transition_code(&ticket, &status);
         if transition_options.is_none() {
-            eprintln!("Invalid status...");
+            if !silent {
+                eprintln!("Invalid status...");
+            }
             std::process::exit(1);
         }
         let transition_code = transition_options.unwrap();
@@ -89,10 +91,14 @@ impl TransitionService for DefaultTransitionService {
             config::get_version().parse::<u8>().unwrap_or(3),
         );
         if transitions_response.is_err() {
-            eprintln!("Unable to perform transition.");
+            if !silent {
+                eprintln!("Unable to perform transition. Please check if the status is correct and try again.");
+            }
             std::process::exit(1);
         }
         let response = transitions_response.unwrap();
-        println!("Successfully Completed {response}");
+        if !silent {
+            println!("Successfully Completed {response}");
+        }
     }
 }

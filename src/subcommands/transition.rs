@@ -25,4 +25,11 @@ pub fn subcommand() -> App<'static, 'static> {
                 .help("List the possible transitions.")
                 .takes_value(false),
         )
+        .arg(
+            Arg::with_name("silent_mode")
+                .short("s")
+                .long("silent")
+                .help("Executes the command without any output.")
+                .takes_value(false),
+        )
 }
