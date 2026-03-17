@@ -110,7 +110,8 @@ pub fn handle_new_matches(matches: &ArgMatches) {
 pub fn handle_assign_matches(matches: &ArgMatches) {
     let ticket = String::from(matches.value_of("ticket").unwrap());
     let user = String::from(matches.value_of("user").unwrap());
-    service::<dyn assign::AssignService>().assign_task(ticket, user);
+    let silent = matches.is_present("silent_mode");
+    service::<dyn assign::AssignService>().assign_task(ticket, user, silent);
 }
 
 pub fn handle_comments_matches(matches: &ArgMatches) {

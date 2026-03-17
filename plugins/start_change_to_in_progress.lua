@@ -6,16 +6,17 @@
 
 local pbi = jira_context.selected_pbi
 if not pbi then
-    return "error: no PBI selected"
+	return "error: no PBI selected"
 end
 
 local status = jira_context.config.alias["ip"] or "In Progress"
 
-local cmd = string.format("jira transition '%s' -t %s", status, pbi.key)
+-- -s for silent mode
+local cmd = string.format("jira transition '%s' -t %s -s", status, pbi.key)
 local ok = os.execute(cmd)
 
 if ok ~= 0 then
-    return "error: failed to transition " .. pbi.key .. " to '" .. status .. "'"
+	return "error: failed to transition " .. pbi.key .. " to '" .. status .. "'"
 end
 
 return "transitioned " .. pbi.key .. " to '" .. status .. "'"

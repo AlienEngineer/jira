@@ -12,7 +12,8 @@ if account_id == "" then
 	return "error: account-id not set in config"
 end
 
-local cmd = string.format("jira assign -u %s -t %s", account_id, pbi.key)
+-- -s for silent mode
+local cmd = string.format("jira assign -u %s -t %s -s", account_id, pbi.key)
 local ok = os.execute(cmd)
 
 if ok ~= 0 then

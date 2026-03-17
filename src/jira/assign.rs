@@ -6,7 +6,7 @@ use crate::jira::api::JiraApi;
 use crate::jira::utils::MetadataService;
 
 pub trait AssignService: Interface {
-    fn assign_task(&self, ticket: String, user: String);
+    fn assign_task(&self, ticket: String, user: String, silent: bool);
 }
 
 pub struct DefaultAssignService {
@@ -24,20 +24,26 @@ impl DefaultAssignService {
 }
 
 impl AssignService for DefaultAssignService {
-    fn assign_task(&self, ticket: String, user: String) {
+    fn assign_task(&self, ticket: String, user: String, silent: bool) {
         let aliased_query = config::get_alias_or(user);
         let account_id = self.metadata_service.get_account_id(aliased_query);
         let payload = json::object! {
             "accountId": account_id
         };
-        let update_response = self
-            .jira_api
-            .put(&format!("issue/{ticket}/assignee"), payload, 3);
+        let update_response = self.jira_api.put(
+            &format!("issue/{ticket}/assignee"),
+            payload,
+            config::get_version().parse::<u8>().unwrap_or(3),
+        );
         if update_response.is_err() {
-            eprintln!("Error occurred While assigning the ticket.");
+            if !silent {
+                eprintln!("Error occurred While assigning the ticket.");
+            }
             std::process::exit(1);
         }
         let response = update_response.unwrap();
-        println!("Successfully Assigned {response}");
+        if !silent {
+            println!("Successfully Assigned {response}");
+        }
     }
 }
