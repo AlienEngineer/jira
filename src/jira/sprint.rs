@@ -64,7 +64,7 @@ impl DefaultSprintService {
         sort_by_status(&mut pbis);
         Ok(pbis)
     }
-
+    /*
     fn fetch_active_sprint(&self, board_id: &str) -> Result<Sprint, Box<dyn Error>> {
         let sprints_response = self
             .jira_api
@@ -86,6 +86,7 @@ impl DefaultSprintService {
             board_id: board_id.to_string(),
         })
     }
+    */
 }
 
 impl SprintService for DefaultSprintService {
