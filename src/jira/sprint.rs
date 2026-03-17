@@ -12,6 +12,7 @@ use std::sync::Arc;
 pub trait SprintService: Interface {
     fn fetch_active_sprint_issues(&self, board_id: &str) -> Result<Sprint, Box<dyn Error>>;
     fn fetch_pbi_details(&self, pbi: &mut Pbi) -> Result<(), Box<dyn Error>>;
+    fn set_sprint_as_achieved(&self) -> Result<bool, Box<dyn Error>>;
 }
 
 pub struct DefaultSprintService {
@@ -62,6 +63,28 @@ impl DefaultSprintService {
         }
         sort_by_status(&mut pbis);
         Ok(pbis)
+    }
+
+    fn fetch_active_sprint(&self, board_id: &str) -> Result<Sprint, Box<dyn Error>> {
+        let sprints_response = self
+            .jira_api
+            .get_agile(&format!("board/{board_id}/sprint?state=active"))?;
+        let sprints = &sprints_response["values"];
+        if !sprints.is_array() || sprints.is_empty() {
+            return Err("No active sprint found for the given board.".into());
+        }
+        let sprint = &sprints[0];
+        let sprint_id = sprint["id"].as_u64_or_0();
+        Ok(Sprint {
+            name: sprint["name"].as_string_or("Active Sprint"),
+            goal: sprint["goal"].as_string_or(""),
+            end_date: sprint["endDate"]
+                .as_str()
+                .map(|s| s.chars().take(10).collect::<String>())
+                .unwrap_or_default(),
+            pbis: Vec::new(),
+            board_id: board_id.to_string(),
+        })
     }
 }
 
@@ -120,6 +143,10 @@ impl SprintService for DefaultSprintService {
         pbi.resolved_at = fields["resolutiondate"].as_str().map(|s| s.to_string());
         pbi.loaded = true;
         Ok(())
+    }
+
+    fn set_sprint_as_achieved(&self) -> Result<bool, Box<dyn Error>> {
+        todo!()
     }
 }
 
