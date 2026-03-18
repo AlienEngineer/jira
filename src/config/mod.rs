@@ -10,6 +10,8 @@ use crate::ioc;
 use crate::jira;
 use crate::prelude::Result;
 
+pub mod keymaps;
+
 /// Typed representation of the JIRA configuration file.
 #[derive(Debug, Clone)]
 pub struct JiraConfig {

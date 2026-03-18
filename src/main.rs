@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate clap;
 extern crate rpassword;
+use ::jira::lua::init::init_lua_config;
 use clap::App;
 
 pub mod api;
@@ -14,6 +15,12 @@ pub mod ui;
 
 fn main() -> prelude::Result<()> {
     init_ioc_container();
+
+    if init_lua_config().is_err() {
+        eprintln!(
+            "Failed to initialize Lua configuration. Continuing without Lua custom configuration."
+        );
+    }
 
     config::ensure_config()?;
     let app = App::new("JIRA")

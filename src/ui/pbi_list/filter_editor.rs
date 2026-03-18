@@ -2,7 +2,7 @@ use crate::jira::lists::{ListFilter, FILTER_FIELDS};
 use crossterm::event::KeyCode;
 use ratatui::{
     layout::{Alignment, Constraint, Flex, Layout, Rect},
-    style::{Color, Modifier, Style, Stylize},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Clear, List, ListItem, ListState, Paragraph},
     Frame,

@@ -2,7 +2,7 @@ use crate::plugins::lua_plugin::get_plugins_path;
 use crossterm::event::KeyCode;
 use ratatui::{
     layout::{Constraint, Layout, Rect},
-    style::{Color, Modifier, Style, Stylize},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, HighlightSpacing, List, ListItem, ListState},
     Frame,

@@ -2,6 +2,7 @@ pub mod api;
 pub mod config;
 pub mod ioc;
 pub mod jira;
+pub mod lua;
 pub mod plugins;
 pub mod prelude;
 pub mod subcommands;
