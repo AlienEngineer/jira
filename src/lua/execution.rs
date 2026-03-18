@@ -34,8 +34,8 @@ impl ScriptIntegration for LuaIntegration {
 
     fn exec_script(&self, script: &str) -> Result<()> {
         let lua = &self.lua;
-        if lua.load(script).exec().is_err() {
-            Err("Failed to execute Lua script".into())
+        if let Err(e) = lua.load(script).exec() {
+            Err(format!("Failed to execute Lua script: {}", e).into())
         } else {
             Ok(())
         }
