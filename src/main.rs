@@ -1,13 +1,13 @@
 #[macro_use]
 extern crate clap;
 extern crate rpassword;
-use ::jira::lua::init::init_lua_config;
 use clap::App;
 
 pub mod api;
 pub mod config;
 pub mod ioc;
 pub mod jira;
+pub mod lua;
 pub mod plugins;
 pub mod prelude;
 pub mod subcommands;
@@ -16,10 +16,9 @@ pub mod ui;
 fn main() -> prelude::Result<()> {
     init_ioc_container();
 
-    if init_lua_config().is_err() {
-        eprintln!(
-            "Failed to initialize Lua configuration. Continuing without Lua custom configuration."
-        );
+    // Use the binary's lua::init module so KEYMAP_COLLECTION is set in this crate
+    if let Err(e) = lua::init::init_lua_config() {
+        eprintln!("Failed to initialize Lua configuration: {}.", e);
     }
 
     config::ensure_config()?;

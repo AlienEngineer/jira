@@ -1,6 +1,7 @@
 use crate::config::JiraConfig;
 use crate::jira::pbi::{pbi_elapsed_display, Pbi};
 use crate::jira::sprint::{sort_by_status, Sprint, SprintService};
+use crate::lua::init::get_keymap_collection;
 use crate::plugins::lua_plugin::{execute_plugins, JiraContext};
 use crossterm::event::KeyCode;
 use ratatui::{
@@ -295,7 +296,7 @@ impl SprintTable {
                         vec![]
                     }
                 }
-                _ => vec![],
+                _ => self.handle_lua_keymaps(key),
             },
         }
     }
@@ -309,6 +310,46 @@ impl SprintTable {
         }
     }
 
+    fn handle_lua_keymaps(&mut self, key: KeyCode) -> Vec<TableAction> {
+        let code = key.to_string();
+        let keycode = code.as_str();
+        if let Some(collection) = get_keymap_collection() {
+            let guard = collection.lock().expect("Failed to lock keymaps");
+            if let Some(keymap) = guard.get_keymap(keycode) {
+                match keymap.execute() {
+                    Ok(result) => {
+                        if !result.is_empty() {
+                            return Vec::from([TableAction::SetStatus(result)]);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to execute keymap '{}': {}", keycode, e);
+                    }
+                }
+            }
+        }
+        vec![]
+    }
+
+    /*
+    fn append_key_maps(spans: &mut Vec<Span<'_>>) {
+        if let Some(collection) = get_keymap_collection() {
+            let keymaps = collection.get_keymaps();
+            let plugin_spans: Vec<Span> = keymaps
+                .into_iter()
+                .flat_map(|k| {
+                    [
+                        Span::styled(k.key, Style::default().fg(Color::Cyan).bold()),
+                        Span::raw(format!(" {}  ", k.description)),
+                    ]
+                })
+                .collect();
+
+            spans.push(Span::raw("  ")); // Add spacing before plugin keymaps
+            spans.extend(plugin_spans);
+        }
+    }
+    */
     // ── Rendering ─────────────────────────────────────────────────────────────
 
     /// Render the table (and the branch-input popup when active).

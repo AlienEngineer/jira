@@ -1,20 +1,31 @@
 use crate::{
     config::{keymaps::KeyMapCollection, JiraConfig},
-    lua::execution::{LuaIntegration, ScriptIntegration},
     prelude::Result,
 };
+use mlua::{Function, Lua, Value};
 use std::sync::{Arc, Mutex};
 use std::{fs, sync::OnceLock};
 
-static KEYMAP_COLLECTION: OnceLock<KeyMapCollection> = OnceLock::new();
+static KEYMAP_COLLECTION: OnceLock<Arc<Mutex<KeyMapCollection>>> = OnceLock::new();
+static LUA_RUNTIME: OnceLock<Lua> = OnceLock::new();
+
+pub fn get_lua_runtime() -> Option<&'static Lua> {
+    LUA_RUNTIME.get()
+}
+
+pub fn get_keymap_collection() -> Option<&'static Arc<Mutex<KeyMapCollection>>> {
+    KEYMAP_COLLECTION.get()
+}
 
 pub fn init_lua_config() -> Result<()> {
     let destination_dir = get_init_lua_config_path();
     let scripts = load_config_scripts(&destination_dir);
-    let integration = LuaIntegration::new();
-    let jira = integration.make_table();
 
-    let config = integration.make_table();
+    // Create a long-lived Lua runtime that will be stored statically
+    let lua = Lua::new();
+
+    let jira = lua.create_table()?;
+    let config = lua.create_table()?;
 
     let jira_config = JiraConfig::load()?;
     config.set("namespace", jira_config.namespace.clone())?;
@@ -31,55 +42,75 @@ pub fn init_lua_config() -> Result<()> {
     jira.set("version", "2.4.20")?;
 
     let keymaps = Arc::new(Mutex::new(KeyMapCollection::new()));
-    let keymaps_clone = keymaps.clone();
+    let keymaps_for_function = keymaps.clone();
 
-    let set = integration
-        .lua
-        .create_function(move |_, (key, script): (String, String)| {
-            let mut guard = keymaps
+    // jira.keymaps.set_function(key, lua_function) - for Lua function callbacks
+    let set_function =
+        lua.create_function(move |lua, (key, func, label): (String, Function, String)| {
+            // Store the function in the Lua registry so it persists
+            let registry_key = lua
+                .create_registry_value(func)
+                .map_err(|e| mlua::Error::runtime(format!("Failed to store function: {}", e)))?;
+
+            let mut guard = keymaps_for_function
                 .lock()
                 .map_err(|e| mlua::Error::runtime(format!("Failed to lock keymaps: {}", e)))?;
+
             guard
-                .set(&key, &script, "User defined keymap")
+                .set(&key, registry_key, &label)
                 .map_err(|e| mlua::Error::runtime(format!("Failed to set keymap: {}", e)))?;
             Ok(())
         })?;
 
-    let keymap_functions = integration.make_table();
-    keymap_functions.set("set", set)?;
+    let keymap_functions = lua.create_table()?;
+    keymap_functions.set("set", set_function)?;
     jira.set("keymaps", keymap_functions)?;
 
-    integration.set_global("jira", jira);
+    lua.globals().set("jira", jira)?;
+
+    // Execute all config scripts
     for script in scripts.unwrap_or_default() {
-        if let Err(e) = integration.exec_script(&script) {
+        if let Err(e) = lua.load(&script).exec() {
             eprintln!("Error executing Lua script: {}", e);
         }
     }
 
-    // Drop the Lua integration to release the Arc reference held by the closure
-    drop(integration);
+    // Store the Lua runtime globally so we can call functions later
+    LUA_RUNTIME.set(lua).ok();
 
-    KEYMAP_COLLECTION
-        .set(
-            Arc::try_unwrap(keymaps_clone)
-                .expect("Arc still has multiple owners")
-                .into_inner()
-                .expect("Mutex was poisoned"),
-        )
-        .ok();
+    // Store the keymap collection (keep it wrapped in Arc<Mutex<>> since the closure holds a reference)
+    KEYMAP_COLLECTION.set(keymaps).ok();
 
     println!("Lua configuration initialized from {}", destination_dir);
 
+    bump_key_maps();
+
+    Ok(())
+}
+
+pub fn bump_key_maps() {
     if let Some(collection) = KEYMAP_COLLECTION.get() {
-        let keymaps = collection.get_keymaps();
+        let guard = collection.lock().expect("Failed to lock keymaps");
+        let keymaps = guard.get_keymaps();
         for keymap in keymaps {
-            println!("Registered keymap: {} -> {}", keymap.key, keymap.script);
+            println!("Registered keymap: {} -> function", keymap.key);
         }
     } else {
         println!("No keymaps loaded.");
     }
+}
 
-    Ok(())
+/// Execute a keymap action and return the result.
+/// Calls the Lua function associated with the keymap.
+pub fn execute_keymap_action(keymap: &crate::config::keymaps::KeyMap) -> Result<String> {
+    let lua = get_lua_runtime().ok_or("Lua runtime not initialized")?;
+    let func: Function = lua.registry_value(&*keymap.func)?;
+    let result: Value = func.call(())?;
+    match result {
+        Value::String(s) => Ok(s.to_str()?.to_string()),
+        Value::Nil => Ok(String::new()),
+        other => Ok(format!("{:?}", other)),
+    }
 }
 
 pub fn get_init_lua_config_path() -> String {

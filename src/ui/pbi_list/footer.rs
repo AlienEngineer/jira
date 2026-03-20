@@ -5,6 +5,8 @@ use ratatui::{
     Frame,
 };
 
+use crate::lua::init::get_keymap_collection;
+
 pub struct Footer {
     pub status_msg: String,
 }
@@ -35,9 +37,7 @@ impl Footer {
             )
         };
 
-        frame.render_widget(
-            Line::from(vec![
-                Span::raw(" "),
+        /*
                 Span::styled("j/k", Style::default().fg(Color::Yellow).bold()),
                 Span::raw(" Navigate  "),
                 Span::styled("l", Style::default().fg(Color::Yellow).bold()),
@@ -45,12 +45,55 @@ impl Footer {
                 Span::styled("f", Style::default().fg(Color::Yellow).bold()),
                 Span::raw(" Filter  "),
                 Span::styled("F", Style::default().fg(Color::Yellow).bold()),
-                Span::raw(" Refresh  "),
+                Span::raw(" Refresh  p"),
                 Span::styled("q", Style::default().fg(Color::Yellow).bold()),
                 Span::raw(" Quit"),
-                status_span,
-            ]),
-            area,
-        );
+        */
+
+        let keymaps = Vec::from([
+            ("↵", "Start"),
+            ("f", "Filter"),
+            ("F", "Refresh"),
+            ("o", "Browser"),
+            ("q", "Quit"),
+        ]);
+
+        let len = keymaps.len();
+        let mut spans: Vec<Span> = std::iter::once(Span::raw(" "))
+            .chain(keymaps.iter().enumerate().flat_map(|(i, (key, desc))| {
+                let suffix = if i == len - 1 { " " } else { "  " };
+                [
+                    Span::styled(*key, Style::default().fg(Color::Yellow).bold()),
+                    Span::raw(
+                        format!(" {} {}", desc, suffix).trim_end().to_string()
+                            + if i == len - 1 { "" } else { "  " },
+                    ),
+                ]
+            }))
+            .collect();
+
+        append_key_maps(&mut spans);
+
+        spans.push(status_span);
+        frame.render_widget(Line::from(spans), area);
+    }
+}
+
+fn append_key_maps(spans: &mut Vec<Span<'_>>) {
+    if let Some(collection) = get_keymap_collection() {
+        let guard = collection.lock().expect("Failed to lock keymaps");
+        let keymaps = guard.get_keymaps();
+        let plugin_spans: Vec<Span> = keymaps
+            .iter()
+            .flat_map(|k| {
+                [
+                    Span::styled(k.key.clone(), Style::default().fg(Color::Cyan).bold()),
+                    Span::raw(format!(" {}  ", k.description)),
+                ]
+            })
+            .collect();
+
+        spans.push(Span::raw("  ")); // Add spacing before plugin keymaps
+        spans.extend(plugin_spans);
     }
 }
