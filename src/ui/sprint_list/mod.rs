@@ -1,19 +1,19 @@
-mod footer;
 mod progress_block;
 mod sprint_goal;
 mod sprint_table;
 
-use footer::Footer;
 use progress_block::{ProgressBlock, SprintProgressData};
 use sprint_goal::SprintGoalWidget;
 use sprint_table::{SprintTable, TableAction};
 
+use crate::config::keymaps::Scope;
 use crate::jira::pbi::Pbi;
 use crate::jira::sprint::{self, Sprint, SprintService};
 use crate::lua::init::{take_command_receiver, JiraCommand};
 use crate::prelude::Result;
 use crate::ui::pbi_detail::PbiDetailView;
 use crate::ui::plugin_list::PluginListView;
+use crate::ui::shared::footer::Footer;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::{DefaultTerminal, Frame};
@@ -60,7 +60,7 @@ impl SprintApp {
             goal: SprintGoalWidget::new(sprint.name.clone(), sprint.goal.clone()),
             table: SprintTable::new(sprint, sprint_service),
             progress: ProgressBlock::new(),
-            footer: Footer::new(),
+            footer: Footer::new(vec![Scope::Sprint, Scope::Global, Scope::Pbi]),
             exit: false,
             active_view: ActiveView::Sprint,
             pending_plugin_edit: None,
@@ -184,9 +184,7 @@ impl SprintApp {
                 vec![]
             }
             JiraCommand::StartWork => self.table.start_work_on_selected(),
-            JiraCommand::OpenFilter => vec![], // Not implemented for sprint view
-            JiraCommand::EditPluginSelected => vec![], // No-op in sprint view
-            JiraCommand::Back => vec![],       // No-op in sprint view (top level)
+            _ => vec![],
         };
         for action in actions {
             self.dispatch(action);

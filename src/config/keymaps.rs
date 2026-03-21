@@ -1,13 +1,37 @@
+use crate::prelude;
 use mlua::RegistryKey;
+use std::str::FromStr;
 use std::sync::Arc;
 
-use crate::prelude;
-
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Scope {
     Global,
+    PbiList,
     Pbi,
     Sprint,
+    Plugin,
+}
+
+impl Scope {
+    pub(crate) fn is_in(&self, scopes: &[Scope]) -> bool {
+        scopes.iter().any(|s| s == self)
+    }
+}
+
+impl FromStr for Scope {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let scope_str = s.to_lowercase();
+
+        Ok(match scope_str.as_str() {
+            "pbi" => Scope::Pbi,
+            "plugin" => Scope::Plugin,
+            "sprint" => Scope::Sprint,
+            "pbilist" => Scope::PbiList,
+            _ => Scope::Global,
+        })
+    }
 }
 
 pub struct KeyMap {
@@ -43,17 +67,17 @@ impl KeyMapCollection {
         key: &str,
         registry_key: RegistryKey,
         description: Option<&str>,
+        scope: Option<&str>,
     ) -> prelude::Result<()> {
         if self.keymaps.iter().any(|k| k.key == key) {
             return Err(format!(r#"Key '{}' is already registered"#, key).into());
         }
 
-        let scope = Scope::Global;
         self.keymaps.push(KeyMap {
             key: key.to_string(),
             func: Arc::new(registry_key),
             description: description.map(|s| s.to_string()),
-            scope,
+            scope: scope.unwrap_or("global").parse().unwrap_or(Scope::Global),
             hidden: false,
         });
         Ok(())
@@ -94,7 +118,12 @@ mod test {
         let registry_key = lua_function();
         let keymap = &mut KeyMapCollection::new();
         keymap
-            .set("y", registry_key, Some("some description about what this is"))
+            .set(
+                "y",
+                registry_key,
+                Some("some description about what this is"),
+                None,
+            )
             .unwrap();
         let keymaps = keymap.get_keymaps();
 
@@ -122,12 +151,20 @@ mod test {
 
         let keymap = &mut KeyMapCollection::new();
         keymap
-            .set("y", registry_key, Some("some description about what this is"))
+            .set(
+                "y",
+                registry_key,
+                Some("some description about what this is"),
+                None,
+            )
             .unwrap();
         let keymap = keymap.get_keymap("y").unwrap();
 
         assert_eq!(keymap.key, "y");
-        assert_eq!(keymap.description, Some("some description about what this is".to_string()));
+        assert_eq!(
+            keymap.description,
+            Some("some description about what this is".to_string())
+        );
         assert!(matches!(keymap.scope, Scope::Global));
     }
 
@@ -135,7 +172,7 @@ mod test {
     fn setting_keymap_without_description() {
         let registry_key = lua_function();
         let keymap = &mut KeyMapCollection::new();
-        keymap.set("y", registry_key, None).unwrap();
+        keymap.set("y", registry_key, None, None).unwrap();
         let keymaps = keymap.get_keymaps();
 
         assert_eq!(keymaps.len(), 1);
@@ -156,11 +193,21 @@ mod test {
 
         let keymap = &mut KeyMapCollection::new();
         keymap
-            .set("y", registry_key, Some("some description about what this is"))
+            .set(
+                "y",
+                registry_key,
+                Some("some description about what this is"),
+                None,
+            )
             .unwrap();
 
         match keymap
-            .set("y", registry_key2, Some("some description about what this is"))
+            .set(
+                "y",
+                registry_key2,
+                Some("some description about what this is"),
+                None,
+            )
             .is_err()
         {
             true => {

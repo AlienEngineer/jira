@@ -1,11 +1,12 @@
-use crate::lua::init::get_keymap_collection;
+use crate::config::keymaps::Scope;
 use crate::plugins::lua_plugin::get_plugins_path;
 use crate::ui::keycode_mapper::keycode_to_string;
+use crate::{lua::init::get_keymap_collection, ui::shared::footer::Footer};
 use crossterm::event::KeyCode;
 use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::{Line, Span},
+    text::Span,
     widgets::{Block, HighlightSpacing, List, ListItem, ListState},
     Frame,
 };
@@ -24,6 +25,7 @@ pub enum PluginListAction {
 pub struct PluginListView {
     plugins: Vec<PathBuf>,
     list_state: ListState,
+    footer: Footer,
 }
 
 impl PluginListView {
@@ -36,6 +38,7 @@ impl PluginListView {
         Self {
             plugins,
             list_state,
+            footer: Footer::new(vec![Scope::Global, Scope::Plugin]),
         }
     }
 
@@ -96,7 +99,7 @@ impl PluginListView {
         .split(area);
 
         self.render_list(frame, layout[0]);
-        self.render_footer(frame, layout[1]);
+        self.footer.render(frame, layout[1]);
     }
 
     fn render_list(&mut self, frame: &mut Frame, area: Rect) {
@@ -139,29 +142,6 @@ impl PluginListView {
             .highlight_spacing(HighlightSpacing::Always);
 
         frame.render_stateful_widget(list, area, &mut self.list_state);
-    }
-
-    fn render_footer(&self, frame: &mut Frame, area: Rect) {
-        let mut spans: Vec<Span> = vec![Span::raw(" ")];
-
-        if let Some(collection) = get_keymap_collection() {
-            let guard = collection.lock().expect("Failed to lock keymaps");
-            let keymaps = guard.get_keymaps();
-            let plugin_spans: Vec<Span> = keymaps
-                .iter()
-                .filter(|k| k.description.is_some())
-                .flat_map(|k| {
-                    [
-                        Span::styled(k.key.clone(), Style::default().fg(Color::Yellow).bold()),
-                        Span::raw(format!(" {}  ", k.description.as_ref().unwrap())),
-                    ]
-                })
-                .collect();
-
-            spans.extend(plugin_spans);
-        }
-
-        frame.render_widget(Line::from(spans), area);
     }
 }
 

@@ -1,6 +1,8 @@
+use crate::config::keymaps::Scope;
 use crate::jira::pbi::{pbi_elapsed_display, Pbi};
 use crate::lua::init::get_keymap_collection;
 use crate::ui::keycode_mapper::keycode_to_string;
+use crate::ui::shared::footer::Footer;
 use crossterm::event::KeyCode;
 use ratatui::{
     layout::{Constraint, Layout, Rect},
@@ -24,6 +26,7 @@ pub enum PbiDetailAction {
 pub struct PbiDetailView {
     pub pbi: Pbi,
     desc_scroll: u16,
+    footer: Footer,
 }
 
 impl PbiDetailView {
@@ -31,6 +34,7 @@ impl PbiDetailView {
         Self {
             pbi,
             desc_scroll: 0,
+            footer: Footer::new(vec![Scope::Global, Scope::Pbi]),
         }
     }
 
@@ -80,7 +84,7 @@ impl PbiDetailView {
         self.render_header(frame, layout[0]);
         self.render_metadata(frame, layout[1]);
         self.render_description(frame, layout[2]);
-        self.render_footer(frame, layout[3]);
+        self.footer.render(frame, layout[3]);
     }
 
     // ── Header bar ────────────────────────────────────────────────────────────
@@ -274,31 +278,6 @@ impl PbiDetailView {
             inner_layout[1],
             &mut scrollbar_state,
         );
-    }
-
-    // ── Footer ────────────────────────────────────────────────────────────────
-
-    fn render_footer(&self, frame: &mut Frame, area: Rect) {
-        let mut spans: Vec<Span> = vec![Span::raw(" ")];
-
-        if let Some(collection) = get_keymap_collection() {
-            let guard = collection.lock().expect("Failed to lock keymaps");
-            let keymaps = guard.get_keymaps();
-            let plugin_spans: Vec<Span> = keymaps
-                .iter()
-                .filter(|k| k.description.is_some())
-                .flat_map(|k| {
-                    [
-                        Span::styled(k.key.clone(), Style::default().fg(Color::Yellow).bold()),
-                        Span::raw(format!(" {}  ", k.description.as_ref().unwrap())),
-                    ]
-                })
-                .collect();
-
-            spans.extend(plugin_spans);
-        }
-
-        frame.render_widget(Line::from(spans), area);
     }
 }
 

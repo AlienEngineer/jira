@@ -1,16 +1,16 @@
 mod filter_editor;
-mod footer;
 mod table;
 
 use filter_editor::{FilterEditor, FilterEditorAction};
-use footer::Footer;
 use table::IssueTable;
 
+use crate::config::keymaps::Scope;
 use crate::jira::lists::{ListFilter, ListService};
 use crate::jira::pbi::Pbi;
 use crate::lua::init::{take_command_receiver, JiraCommand};
 use crate::prelude::Result;
 use crate::ui::pbi_detail::PbiDetailView;
+use crate::ui::shared::footer::Footer;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::{
     layout::{Constraint, Layout},
@@ -66,7 +66,7 @@ impl PbiListApp {
             filter,
             selected_pbi: None,
             list_service,
-            footer: Footer::new(),
+            footer: Footer::new(vec![Scope::PbiList, Scope::Global, Scope::Pbi]),
             active_view: ActiveView::List,
             exit: false,
             bg_rx: None,

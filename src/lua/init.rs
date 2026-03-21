@@ -41,11 +41,8 @@ fn ensure_command_channel_initialized() {
     });
 }
 
-/// Get the command receiver for SprintApp to poll
 pub fn take_command_receiver() -> Option<Receiver<JiraCommand>> {
-    // Ensure channel is created first
     ensure_command_channel_initialized();
-    // Take the receiver (can only be taken once)
     COMMAND_RECEIVER
         .get()
         .and_then(|m| m.lock().ok())
@@ -219,7 +216,7 @@ pub fn init_lua_config() -> Result<()> {
 
     // jira.keymaps.set(key, lua_function, description?) - for Lua function callbacks
     let set_function = lua.create_function(
-        move |lua, (key, func, label): (String, Function, Option<String>)| {
+        move |lua, (key, func, label, scope): (String, Function, Option<String>, Option<String>)| {
             // Store the function in the Lua registry so it persists
             let registry_key = lua
                 .create_registry_value(func)
@@ -230,7 +227,7 @@ pub fn init_lua_config() -> Result<()> {
                 .map_err(|e| mlua::Error::runtime(format!("Failed to lock keymaps: {}", e)))?;
 
             guard
-                .set(&key, registry_key, label.as_deref())
+                .set(&key, registry_key, label.as_deref(), scope.as_deref())
                 .map_err(|e| mlua::Error::runtime(format!("Failed to set keymap: {}", e)))?;
             Ok(())
         },

@@ -5,16 +5,18 @@ use ratatui::{
     Frame,
 };
 
-use crate::lua::init::get_keymap_collection;
+use crate::{config::keymaps::Scope, ui::keycode_mapper::generate_keymaps};
 
 pub struct Footer {
     pub status_msg: String,
+    pub scopes: Vec<Scope>,
 }
 
 impl Footer {
-    pub fn new() -> Self {
+    pub fn new(scopes: Vec<Scope>) -> Self {
         Self {
             status_msg: String::new(),
+            scopes,
         }
     }
 
@@ -38,27 +40,14 @@ impl Footer {
         };
 
         let mut spans: Vec<Span> = vec![Span::raw(" ")];
-        append_key_maps(&mut spans);
+        generate_keymaps(&mut spans, self.scopes.clone());
         spans.push(status_span);
         frame.render_widget(Line::from(spans), area);
     }
 }
 
-fn append_key_maps(spans: &mut Vec<Span<'_>>) {
-    if let Some(collection) = get_keymap_collection() {
-        let guard = collection.lock().expect("Failed to lock keymaps");
-        let keymaps = guard.get_keymaps();
-        let plugin_spans: Vec<Span> = keymaps
-            .iter()
-            .filter(|k| k.description.is_some())
-            .flat_map(|k| {
-                [
-                    Span::styled(k.key.clone(), Style::default().fg(Color::Yellow).bold()),
-                    Span::raw(format!(" {}  ", k.description.as_ref().unwrap())),
-                ]
-            })
-            .collect();
-
-        spans.extend(plugin_spans);
+impl Default for Footer {
+    fn default() -> Self {
+        Self::new(Vec::new())
     }
 }
