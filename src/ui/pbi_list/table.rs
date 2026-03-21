@@ -1,4 +1,6 @@
 use crate::jira::pbi::Pbi;
+use crate::lua::init::get_keymap_collection;
+use crate::ui::keycode_mapper::keycode_to_string;
 use crossterm::event::KeyCode;
 use ratatui::{
     layout::{Alignment, Constraint, Rect},
@@ -6,13 +8,6 @@ use ratatui::{
     widgets::{Block, Cell, Row, Table, TableState},
     Frame,
 };
-
-// ── Actions returned to PbiListApp ────────────────────────────────────────────
-
-pub enum IssueTableAction {
-    OpenDetail(Box<Pbi>),
-    Quit,
-}
 
 // ── IssueTable ────────────────────────────────────────────────────────────────
 
@@ -39,7 +34,7 @@ impl IssueTable {
 
     // ── Navigation ────────────────────────────────────────────────────────────
 
-    fn navigate_down(&mut self, count: usize) {
+    pub fn navigate_down(&mut self, count: usize) {
         let next = self.table_state.selected().map_or(0, |i| {
             if i >= count.saturating_sub(1) {
                 0
@@ -50,7 +45,7 @@ impl IssueTable {
         self.table_state.select(Some(next));
     }
 
-    fn navigate_up(&mut self, count: usize) {
+    pub fn navigate_up(&mut self, count: usize) {
         let prev = self.table_state.selected().map_or(0, |i| {
             if i == 0 {
                 count.saturating_sub(1)
@@ -63,26 +58,19 @@ impl IssueTable {
 
     // ── Key handling ──────────────────────────────────────────────────────────
 
-    pub fn handle_key(&mut self, key: KeyCode, issues: &[Pbi]) -> Option<IssueTableAction> {
-        match key {
-            KeyCode::Down | KeyCode::Char('j') => {
-                self.navigate_down(issues.len());
-                None
-            }
-            KeyCode::Up | KeyCode::Char('k') => {
-                self.navigate_up(issues.len());
-                None
-            }
-            KeyCode::Right | KeyCode::Char('l') | KeyCode::Enter => {
-                if let Some(i) = self.table_state.selected() {
-                    if let Some(pbi) = issues.get(i) {
-                        return Some(IssueTableAction::OpenDetail(Box::new(pbi.clone())));
-                    }
+    pub fn handle_key(&mut self, key: KeyCode) {
+        self.handle_lua_keymaps(key);
+    }
+
+    fn handle_lua_keymaps(&mut self, key: KeyCode) {
+        let keycode = keycode_to_string(key);
+        if let Some(collection) = get_keymap_collection() {
+            let guard = collection.lock().expect("Failed to lock keymaps");
+            if let Some(keymap) = guard.get_keymap(&keycode) {
+                if let Err(e) = keymap.execute() {
+                    eprintln!("Failed to execute keymap '{}': {}", keycode, e);
                 }
-                None
             }
-            KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => Some(IssueTableAction::Quit),
-            _ => None,
         }
     }
 

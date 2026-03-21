@@ -3,6 +3,7 @@ use crate::jira::pbi::{pbi_elapsed_display, Pbi};
 use crate::jira::sprint::{sort_by_status, Sprint, SprintService};
 use crate::lua::init::get_keymap_collection;
 use crate::plugins::lua_plugin::{execute_plugins, JiraContext};
+use crate::ui::keycode_mapper::keycode_to_string;
 use crossterm::event::KeyCode;
 use ratatui::{
     layout::{Alignment, Constraint, Rect},
@@ -53,13 +54,6 @@ pub enum TableAction {
     OpenPlugins,
 }
 
-// ── Internal mode ────────────────────────────────────────────────────────────
-
-enum TableMode {
-    /// Normal navigation.
-    Normal,
-}
-
 // ── SprintTable ──────────────────────────────────────────────────────────────
 
 /// Interactive PBI table component.
@@ -78,7 +72,6 @@ pub struct SprintTable {
     pub table_state: TableState,
     loading_idx: Option<usize>,
     load_rx: Option<mpsc::Receiver<LoadMsg>>,
-    mode: TableMode,
 }
 
 impl SprintTable {
@@ -93,13 +86,19 @@ impl SprintTable {
             table_state,
             loading_idx: None,
             load_rx: None,
-            mode: TableMode::Normal,
         }
     }
 
     /// Borrow the current PBI slice (used by `ProgressBlock` at render time).
     pub fn pbis(&self) -> &[Pbi] {
         &self.sprint.pbis
+    }
+
+    /// Get a clone of the currently selected PBI, if any.
+    pub fn get_selected_pbi_cloned(&self) -> Option<Pbi> {
+        self.table_state
+            .selected()
+            .map(|i| self.sprint.pbis[i].clone())
     }
 
     // ── Background refresh ────────────────────────────────────────────────────
@@ -120,6 +119,13 @@ impl SprintTable {
                 }
             },
         );
+    }
+
+    /// Start a background refresh of all sprint issues (public wrapper).
+    pub fn start_load_all_public(&mut self) {
+        if self.load_rx.is_none() {
+            self.start_load_all();
+        }
     }
 
     /// Drain one pending message from the background refresh thread.
@@ -155,7 +161,7 @@ impl SprintTable {
 
     // ── Navigation ────────────────────────────────────────────────────────────
 
-    fn navigate_down(&mut self) {
+    pub fn navigate_down(&mut self) {
         let next = self.table_state.selected().map_or(0, |i| {
             if i >= self.sprint.pbis.len().saturating_sub(1) {
                 0
@@ -166,7 +172,7 @@ impl SprintTable {
         self.table_state.select(Some(next));
     }
 
-    fn navigate_up(&mut self) {
+    pub fn navigate_up(&mut self) {
         let prev = self.table_state.selected().map_or(0, |i| {
             if i == 0 {
                 self.sprint.pbis.len().saturating_sub(1)
@@ -179,7 +185,7 @@ impl SprintTable {
 
     // ── Single-item load (f) ──────────────────────────────────────────────────
 
-    fn load_selected(&mut self) -> Vec<TableAction> {
+    pub fn load_selected(&mut self) -> Vec<TableAction> {
         let Some(i) = self.table_state.selected() else {
             return vec![];
         };
@@ -208,7 +214,7 @@ impl SprintTable {
 
     // ── Open in browser (o) ───────────────────────────────────────────────────
 
-    fn open_selected_in_browser(&self) -> Vec<TableAction> {
+    pub fn open_selected_in_browser(&self) -> Vec<TableAction> {
         let pbi = self.get_selected_pbi();
         let config = JiraConfig::load().unwrap_or_default();
         let url = format!("{}/browse/{}", config.namespace, pbi.key);
@@ -235,7 +241,7 @@ impl SprintTable {
 
     // ── Start work (Enter) ────────────────────────────────────────────────────
 
-    fn start_work_on_selected(&mut self) -> Vec<TableAction> {
+    pub fn start_work_on_selected(&mut self) -> Vec<TableAction> {
         let mut actions: Vec<TableAction> = Vec::new();
         let ctx = JiraContext {
             config: JiraConfig::load().unwrap_or_default(),
@@ -255,67 +261,16 @@ impl SprintTable {
 
     // ── Key handling ──────────────────────────────────────────────────────────
 
-    fn handle_key_with_selection(&mut self, key: KeyCode) -> Vec<TableAction> {
-        match self.mode {
-            TableMode::Normal => match key {
-                KeyCode::Down | KeyCode::Char('j') => {
-                    self.navigate_down();
-                    vec![TableAction::ClearStatus]
-                }
-                KeyCode::Up | KeyCode::Char('k') => {
-                    self.navigate_up();
-                    vec![TableAction::ClearStatus]
-                }
-                KeyCode::Char('f') => self.load_selected(),
-                KeyCode::Char('o') | KeyCode::Char('O') => self.open_selected_in_browser(),
-                KeyCode::Right | KeyCode::Char('l') => {
-                    vec![TableAction::OpenDetail(Box::new(
-                        self.get_selected_pbi().clone(),
-                    ))]
-                }
-                KeyCode::Enter => self.start_work_on_selected(),
-                _ => self.handle_key_without_selection(key),
-            },
-        }
-    }
-
-    fn handle_key_without_selection(&mut self, key: KeyCode) -> Vec<TableAction> {
-        match self.mode {
-            TableMode::Normal => match key {
-                KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => {
-                    vec![TableAction::Exit]
-                }
-                KeyCode::Char('p') | KeyCode::Char('P') => vec![TableAction::OpenPlugins],
-                KeyCode::Char('F') => {
-                    if self.load_rx.is_none() {
-                        self.start_load_all();
-                        vec![TableAction::SetStatus(
-                            "Refreshing sprint from Jira…".into(),
-                        )]
-                    } else {
-                        vec![]
-                    }
-                }
-                _ => self.handle_lua_keymaps(key),
-            },
-        }
-    }
-
     /// Process a key press and return any [`TableAction`]s for `SprintApp`.
     pub fn handle_key(&mut self, key: KeyCode) -> Vec<TableAction> {
-        if self.table_state.selected().is_some() {
-            self.handle_key_with_selection(key)
-        } else {
-            self.handle_key_without_selection(key)
-        }
+        self.handle_lua_keymaps(key)
     }
 
     fn handle_lua_keymaps(&mut self, key: KeyCode) -> Vec<TableAction> {
-        let code = key.to_string();
-        let keycode = code.as_str();
+        let keycode = keycode_to_string(key);
         if let Some(collection) = get_keymap_collection() {
             let guard = collection.lock().expect("Failed to lock keymaps");
-            if let Some(keymap) = guard.get_keymap(keycode) {
+            if let Some(keymap) = guard.get_keymap(&keycode) {
                 match keymap.execute() {
                     Ok(result) => {
                         if !result.is_empty() {

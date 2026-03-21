@@ -1,0 +1,6 @@
+{
+    "diagnostics.globals": [
+        "jira",
+        "jira_context"
+    ]
+}

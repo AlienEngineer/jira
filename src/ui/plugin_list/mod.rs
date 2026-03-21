@@ -1,4 +1,6 @@
+use crate::lua::init::get_keymap_collection;
 use crate::plugins::lua_plugin::get_plugins_path;
+use crate::ui::keycode_mapper::keycode_to_string;
 use crossterm::event::KeyCode;
 use ratatui::{
     layout::{Constraint, Layout, Rect},
@@ -40,31 +42,23 @@ impl PluginListView {
     // ── Key handling ──────────────────────────────────────────────────────────
 
     pub fn handle_key(&mut self, key: KeyCode) -> Option<PluginListAction> {
-        match key {
-            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('h') | KeyCode::Left => {
-                Some(PluginListAction::Back)
-            }
-            KeyCode::Down | KeyCode::Char('j') => {
-                self.navigate_down();
-                None
-            }
-            KeyCode::Up | KeyCode::Char('k') => {
-                self.navigate_up();
-                None
-            }
-            KeyCode::Enter => {
-                if let Some(idx) = self.list_state.selected() {
-                    if let Some(path) = self.plugins.get(idx) {
-                        return Some(PluginListAction::OpenEditor(path.clone()));
-                    }
+        self.handle_lua_keymaps(key);
+        None
+    }
+
+    fn handle_lua_keymaps(&mut self, key: KeyCode) {
+        let keycode = keycode_to_string(key);
+        if let Some(collection) = get_keymap_collection() {
+            let guard = collection.lock().expect("Failed to lock keymaps");
+            if let Some(keymap) = guard.get_keymap(&keycode) {
+                if let Err(e) = keymap.execute() {
+                    eprintln!("Failed to execute keymap '{}': {}", keycode, e);
                 }
-                None
             }
-            _ => None,
         }
     }
 
-    fn navigate_down(&mut self) {
+    pub fn navigate_down(&mut self) {
         if self.plugins.is_empty() {
             return;
         }
@@ -75,7 +69,7 @@ impl PluginListView {
         self.list_state.select(Some(next));
     }
 
-    fn navigate_up(&mut self) {
+    pub fn navigate_up(&mut self) {
         if self.plugins.is_empty() {
             return;
         }
@@ -84,6 +78,12 @@ impl PluginListView {
             Some(i) => i - 1,
         };
         self.list_state.select(Some(prev));
+    }
+
+    pub fn get_selected_plugin(&self) -> Option<PathBuf> {
+        self.list_state
+            .selected()
+            .and_then(|idx| self.plugins.get(idx).cloned())
     }
 
     // ── Rendering ─────────────────────────────────────────────────────────────
@@ -142,18 +142,26 @@ impl PluginListView {
     }
 
     fn render_footer(&self, frame: &mut Frame, area: Rect) {
-        frame.render_widget(
-            Line::from(vec![
-                Span::raw(" "),
-                Span::styled("↵", Style::default().fg(Color::Yellow).bold()),
-                Span::raw(" Open in editor  "),
-                Span::styled("j/k", Style::default().fg(Color::Yellow).bold()),
-                Span::raw(" Navigate  "),
-                Span::styled("h/Esc", Style::default().fg(Color::Yellow).bold()),
-                Span::raw(" Back  "),
-            ]),
-            area,
-        );
+        let mut spans: Vec<Span> = vec![Span::raw(" ")];
+
+        if let Some(collection) = get_keymap_collection() {
+            let guard = collection.lock().expect("Failed to lock keymaps");
+            let keymaps = guard.get_keymaps();
+            let plugin_spans: Vec<Span> = keymaps
+                .iter()
+                .filter(|k| k.description.is_some())
+                .flat_map(|k| {
+                    [
+                        Span::styled(k.key.clone(), Style::default().fg(Color::Yellow).bold()),
+                        Span::raw(format!(" {}  ", k.description.as_ref().unwrap())),
+                    ]
+                })
+                .collect();
+
+            spans.extend(plugin_spans);
+        }
+
+        frame.render_widget(Line::from(spans), area);
     }
 }
 

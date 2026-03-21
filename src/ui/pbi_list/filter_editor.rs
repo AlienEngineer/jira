@@ -173,12 +173,6 @@ impl FilterEditor {
     }
 
     fn render_pick_field(&mut self, frame: &mut Frame, area: Rect) {
-        let layout = Layout::vertical([
-            Constraint::Min(0),    // field list
-            Constraint::Length(1), // footer hints
-        ])
-        .split(area);
-
         // Field list
         let items: Vec<ListItem> = FILTER_FIELDS
             .iter()
@@ -204,22 +198,7 @@ impl FilterEditor {
             )
             .highlight_symbol("❯ ");
 
-        frame.render_stateful_widget(list, layout[0], &mut self.list_state);
-
-        frame.render_widget(
-            Line::from(vec![
-                Span::raw(" "),
-                Span::styled("Enter", Style::default().fg(Color::Yellow).bold()),
-                Span::raw(" Edit  "),
-                Span::styled("d", Style::default().fg(Color::Yellow).bold()),
-                Span::raw(" Clear  "),
-                Span::styled("F", Style::default().fg(Color::Yellow).bold()),
-                Span::raw(" Apply+Fetch  "),
-                Span::styled("Esc", Style::default().fg(Color::Yellow).bold()),
-                Span::raw(" Cancel"),
-            ]),
-            layout[1],
-        );
+        frame.render_stateful_widget(list, area, &mut self.list_state);
     }
 
     fn render_type_value(&self, frame: &mut Frame, area: Rect, field_idx: usize) {
@@ -228,8 +207,7 @@ impl FilterEditor {
             Constraint::Length(1), // label
             Constraint::Length(1), // spacer
             Constraint::Length(3), // input box
-            Constraint::Min(0),    // tip
-            Constraint::Length(1), // hints
+            Constraint::Min(0),    // remaining space
         ])
         .split(area);
 
@@ -259,18 +237,6 @@ impl FilterEditor {
                 .block(Block::bordered().border_style(Style::default().fg(Color::Cyan)))
                 .alignment(Alignment::Left),
             layout[2],
-        );
-
-        // Footer hints
-        frame.render_widget(
-            Line::from(vec![
-                Span::raw(" "),
-                Span::styled("Enter", Style::default().fg(Color::Yellow).bold()),
-                Span::raw(" Apply  "),
-                Span::styled("Esc", Style::default().fg(Color::Yellow).bold()),
-                Span::raw(" Cancel"),
-            ]),
-            layout[4],
         );
     }
 }

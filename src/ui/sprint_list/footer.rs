@@ -40,51 +40,28 @@ impl Footer {
             )
         };
 
-        let keymaps = Vec::from([
-            ("↵", "Start"),
-            ("f", "Load line"),
-            ("F", "Load all"),
-            ("o", "Browser"),
-            ("q", "Quit"),
-        ]);
-
-        let len = keymaps.len();
-        let mut spans: Vec<Span> = std::iter::once(Span::raw(" "))
-            .chain(keymaps.iter().enumerate().flat_map(|(i, (key, desc))| {
-                let suffix = if i == len - 1 { " " } else { "  " };
-                [
-                    Span::styled(*key, Style::default().fg(Color::Yellow).bold()),
-                    Span::raw(
-                        format!(" {} {}", desc, suffix).trim_end().to_string()
-                            + if i == len - 1 { "" } else { "  " },
-                    ),
-                ]
-            }))
-            .collect();
-
+        let mut spans: Vec<Span> = vec![Span::raw(" ")];
         append_key_maps(&mut spans);
-
         spans.push(status_span);
         frame.render_widget(Line::from(spans), area);
     }
 }
 
-// TODO: duplicated code with pbi_list/footer.rs
 fn append_key_maps(spans: &mut Vec<Span<'_>>) {
     if let Some(collection) = get_keymap_collection() {
         let guard = collection.lock().expect("Failed to lock keymaps");
         let keymaps = guard.get_keymaps();
         let plugin_spans: Vec<Span> = keymaps
             .iter()
+            .filter(|k| k.description.is_some())
             .flat_map(|k| {
                 [
-                    Span::styled(k.key.clone(), Style::default().fg(Color::Cyan).bold()),
-                    Span::raw(format!(" {}  ", k.description)),
+                    Span::styled(k.key.clone(), Style::default().fg(Color::Yellow).bold()),
+                    Span::raw(format!(" {}  ", k.description.as_ref().unwrap())),
                 ]
             })
             .collect();
 
-        spans.push(Span::raw("  ")); // Add spacing before plugin keymaps
         spans.extend(plugin_spans);
     }
 }

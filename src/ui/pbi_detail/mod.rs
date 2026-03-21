@@ -1,4 +1,6 @@
 use crate::jira::pbi::{pbi_elapsed_display, Pbi};
+use crate::lua::init::get_keymap_collection;
+use crate::ui::keycode_mapper::keycode_to_string;
 use crossterm::event::KeyCode;
 use ratatui::{
     layout::{Constraint, Layout, Rect},
@@ -34,20 +36,28 @@ impl PbiDetailView {
 
     // ── Key handling ──────────────────────────────────────────────────────────
 
-    pub fn handle_key(&mut self, key: KeyCode) -> Option<PbiDetailAction> {
-        match key {
-            KeyCode::Left | KeyCode::Char('h') | KeyCode::Esc => Some(PbiDetailAction::Back),
-            KeyCode::Char('r') => Some(PbiDetailAction::ShowRaw),
-            KeyCode::Down | KeyCode::Char('j') => {
-                self.desc_scroll = self.desc_scroll.saturating_add(1);
-                None
+    pub fn handle_key(&mut self, key: KeyCode) {
+        self.handle_lua_keymaps(key);
+    }
+
+    fn handle_lua_keymaps(&mut self, key: KeyCode) {
+        let keycode = keycode_to_string(key);
+        if let Some(collection) = get_keymap_collection() {
+            let guard = collection.lock().expect("Failed to lock keymaps");
+            if let Some(keymap) = guard.get_keymap(&keycode) {
+                if let Err(e) = keymap.execute() {
+                    eprintln!("Failed to execute keymap '{}': {}", keycode, e);
+                }
             }
-            KeyCode::Up | KeyCode::Char('k') => {
-                self.desc_scroll = self.desc_scroll.saturating_sub(1);
-                None
-            }
-            _ => None,
         }
+    }
+
+    pub fn scroll_up(&mut self) {
+        self.desc_scroll = self.desc_scroll.saturating_sub(1);
+    }
+
+    pub fn scroll_down(&mut self) {
+        self.desc_scroll = self.desc_scroll.saturating_add(1);
     }
 
     // ── Rendering ─────────────────────────────────────────────────────────────
@@ -269,18 +279,26 @@ impl PbiDetailView {
     // ── Footer ────────────────────────────────────────────────────────────────
 
     fn render_footer(&self, frame: &mut Frame, area: Rect) {
-        frame.render_widget(
-            Line::from(vec![
-                Span::raw(" "),
-                Span::styled("h", Style::default().fg(Color::Yellow).bold()),
-                Span::raw(" Back  "),
-                Span::styled("j/k", Style::default().fg(Color::Yellow).bold()),
-                Span::raw(" Scroll  "),
-                Span::styled("r", Style::default().fg(Color::Yellow).bold()),
-                Span::raw(" Raw in editor  "),
-            ]),
-            area,
-        );
+        let mut spans: Vec<Span> = vec![Span::raw(" ")];
+
+        if let Some(collection) = get_keymap_collection() {
+            let guard = collection.lock().expect("Failed to lock keymaps");
+            let keymaps = guard.get_keymaps();
+            let plugin_spans: Vec<Span> = keymaps
+                .iter()
+                .filter(|k| k.description.is_some())
+                .flat_map(|k| {
+                    [
+                        Span::styled(k.key.clone(), Style::default().fg(Color::Yellow).bold()),
+                        Span::raw(format!(" {}  ", k.description.as_ref().unwrap())),
+                    ]
+                })
+                .collect();
+
+            spans.extend(plugin_spans);
+        }
+
+        frame.render_widget(Line::from(spans), area);
     }
 }
 

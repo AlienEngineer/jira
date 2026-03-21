@@ -10,9 +10,10 @@ use sprint_table::{SprintTable, TableAction};
 
 use crate::jira::pbi::Pbi;
 use crate::jira::sprint::{self, Sprint, SprintService};
+use crate::lua::init::{take_command_receiver, JiraCommand};
 use crate::prelude::Result;
-use crate::ui::pbi_detail::{PbiDetailAction, PbiDetailView};
-use crate::ui::plugin_list::{PluginListAction, PluginListView};
+use crate::ui::pbi_detail::PbiDetailView;
+use crate::ui::plugin_list::PluginListView;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::{DefaultTerminal, Frame};
@@ -20,6 +21,7 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::mpsc::Receiver;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -49,6 +51,7 @@ pub struct SprintApp {
     active_view: ActiveView,
     selected_pbi: Option<Pbi>,
     pending_plugin_edit: Option<PathBuf>,
+    command_rx: Option<Receiver<JiraCommand>>,
 }
 
 impl SprintApp {
@@ -62,12 +65,14 @@ impl SprintApp {
             active_view: ActiveView::Sprint,
             pending_plugin_edit: None,
             selected_pbi: None,
+            command_rx: take_command_receiver(),
         }
     }
 
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
         while !self.exit {
             self.process_background_messages();
+            self.process_lua_commands();
 
             if let Some(pbi) = self.selected_pbi.take() {
                 ratatui::restore();
@@ -88,6 +93,104 @@ impl SprintApp {
             }
         }
         Ok(())
+    }
+
+    /// Process any commands received from Lua keybindings
+    fn process_lua_commands(&mut self) {
+        // Collect commands first to avoid borrow conflicts
+        let commands: Vec<JiraCommand> = {
+            let Some(rx) = &self.command_rx else { return };
+            rx.try_iter().collect()
+        };
+
+        for cmd in commands {
+            match &mut self.active_view {
+                ActiveView::Sprint => self.process_sprint_command(cmd),
+                ActiveView::PbiDetail(detail) => match cmd {
+                    JiraCommand::GoLeft => {
+                        self.active_view = ActiveView::Sprint;
+                    }
+                    JiraCommand::GoUp => {
+                        detail.scroll_up();
+                    }
+                    JiraCommand::GoDown => {
+                        detail.scroll_down();
+                    }
+                    JiraCommand::OpenRawPbiJson => {
+                        self.selected_pbi = Some(detail.pbi.clone());
+                    }
+                    _ => {}
+                },
+                ActiveView::PluginList(plugin_list) => match cmd {
+                    JiraCommand::GoLeft | JiraCommand::Quit => {
+                        self.active_view = ActiveView::Sprint;
+                    }
+                    JiraCommand::GoUp => {
+                        plugin_list.navigate_up();
+                    }
+                    JiraCommand::GoDown => {
+                        plugin_list.navigate_down();
+                    }
+                    JiraCommand::EditPluginSelected | JiraCommand::GoRight => {
+                        if let Some(path) = plugin_list.get_selected_plugin() {
+                            self.pending_plugin_edit = Some(path);
+                        }
+                    }
+                    _ => {}
+                },
+            }
+        }
+    }
+
+    fn process_sprint_command(&mut self, cmd: JiraCommand) {
+        let actions = match cmd {
+            JiraCommand::GoUp => {
+                self.table.navigate_up();
+                vec![TableAction::ClearStatus]
+            }
+            JiraCommand::GoDown => {
+                self.table.navigate_down();
+                vec![TableAction::ClearStatus]
+            }
+            JiraCommand::GoLeft => vec![], // no-op in sprint view
+            JiraCommand::GoRight => {
+                if let Some(pbi) = self.table.get_selected_pbi_cloned() {
+                    vec![TableAction::OpenDetail(Box::new(pbi))]
+                } else {
+                    vec![]
+                }
+            }
+            JiraCommand::OpenPbiDetails => {
+                if let Some(pbi) = self.table.get_selected_pbi_cloned() {
+                    vec![TableAction::OpenDetail(Box::new(pbi))]
+                } else {
+                    vec![]
+                }
+            }
+            JiraCommand::Quit => vec![TableAction::Exit],
+            JiraCommand::Refresh => self.table.load_selected(),
+            JiraCommand::RefreshAll => {
+                self.table.start_load_all_public();
+                vec![TableAction::SetStatus(
+                    "Refreshing sprint from Jira…".into(),
+                )]
+            }
+            JiraCommand::OpenInBrowser => self.table.open_selected_in_browser(),
+            JiraCommand::OpenPluginList => vec![TableAction::OpenPlugins],
+            JiraCommand::OpenRawPbiJson => {
+                if let Some(pbi) = self.table.get_selected_pbi_cloned() {
+                    self.selected_pbi = Some(pbi);
+                }
+                vec![]
+            }
+            JiraCommand::StartWork => self.table.start_work_on_selected(),
+            JiraCommand::OpenFilter => vec![], // Not implemented for sprint view
+            JiraCommand::EditPluginSelected => vec![], // No-op in sprint view
+            JiraCommand::Back => vec![],       // No-op in sprint view (top level)
+        };
+        for action in actions {
+            self.dispatch(action);
+        }
     }
 
     // ── Background messages ───────────────────────────────────────────────────
@@ -171,35 +274,17 @@ impl SprintApp {
     }
 
     fn handle_detail_key(&mut self, key: KeyCode) {
-        // Temporarily take ownership so we can mutate the view and then
-        // potentially replace active_view without a borrow conflict.
         let ActiveView::PbiDetail(ref mut detail) = self.active_view else {
             return;
         };
-        match detail.handle_key(key) {
-            Some(PbiDetailAction::Back) => {
-                self.active_view = ActiveView::Sprint;
-            }
-            Some(PbiDetailAction::ShowRaw) => {
-                self.selected_pbi = Some(detail.pbi.clone()); // unsure if this is necessary as the
-            }
-            None => {}
-        }
+        detail.handle_key(key);
     }
 
     fn handle_plugin_list_key(&mut self, key: KeyCode) {
         let ActiveView::PluginList(ref mut plugin_list) = self.active_view else {
             return;
         };
-        match plugin_list.handle_key(key) {
-            Some(PluginListAction::Back) => {
-                self.active_view = ActiveView::Sprint;
-            }
-            Some(PluginListAction::OpenEditor(path)) => {
-                self.pending_plugin_edit = Some(path);
-            }
-            None => {}
-        }
+        plugin_list.handle_key(key);
     }
 
     // TODO: duplicated with sprint_list, maybe move to util?
