@@ -70,10 +70,18 @@ impl KeyMapCollection {
         scope: Option<&str>,
     ) -> prelude::Result<()> {
         let parsed_scope: Scope = scope.unwrap_or("global").parse().unwrap_or(Scope::Global);
-        
+
         // Allow same key in different scopes
-        if self.keymaps.iter().any(|k| k.key == key && k.scope == parsed_scope) {
-            return Err(format!(r#"Key '{}' is already registered for scope {:?}"#, key, parsed_scope).into());
+        if self
+            .keymaps
+            .iter()
+            .any(|k| k.key == key && k.scope == parsed_scope)
+        {
+            return Err(format!(
+                r#"Key '{}' is already registered for scope {:?}"#,
+                key, parsed_scope
+            )
+            .into());
         }
 
         self.keymaps.push(KeyMap {
@@ -100,11 +108,17 @@ impl KeyMapCollection {
     /// Prioritizes scope-specific keymaps over Global ones.
     pub fn get_keymap(&self, key: &str, scopes: &[Scope]) -> Option<&KeyMap> {
         // First try to find a scope-specific match
-        if let Some(keymap) = self.keymaps.iter().find(|k| k.key == key && scopes.contains(&k.scope)) {
+        if let Some(keymap) = self
+            .keymaps
+            .iter()
+            .find(|k| k.key == key && scopes.contains(&k.scope))
+        {
             return Some(keymap);
         }
         // Fall back to Global scope
-        self.keymaps.iter().find(|k| k.key == key && k.scope == Scope::Global)
+        self.keymaps
+            .iter()
+            .find(|k| k.key == key && k.scope == Scope::Global)
     }
 }
 

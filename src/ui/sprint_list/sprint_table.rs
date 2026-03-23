@@ -44,7 +44,8 @@ pub struct SprintTable {
 
 impl SprintTable {
     pub fn new(sprint: Sprint, sprint_service: Arc<dyn SprintService>) -> Self {
-        let table = PbiTable::with_initial_selection(ColumnConfig::sprint_view(), sprint.pbis.len());
+        let table =
+            PbiTable::with_initial_selection(ColumnConfig::sprint_view(), sprint.pbis.len());
         Self {
             sprint,
             sprint_service,
@@ -74,7 +75,9 @@ impl SprintTable {
         match cmd {
             JiraCommand::RefreshAll => {
                 self.start_load_all_public();
-                actions.push(TableAction::SetStatus("Refreshing sprint from Jira…".into()));
+                actions.push(TableAction::SetStatus(
+                    "Refreshing sprint from Jira…".into(),
+                ));
             }
             JiraCommand::OpenPluginList => {
                 actions.push(TableAction::OpenPlugins);
@@ -95,7 +98,7 @@ impl SprintTable {
     pub fn load_pbi(&mut self, idx: usize) -> Vec<TableAction> {
         let api = self.sprint_service.jira_api();
         let mut actions = self.table.load_pbi(idx, &mut self.sprint.pbis, api);
-        
+
         // Sprint-specific: sort by status and save cache on success
         if !actions.is_empty() {
             if let Some(TableAction::SetStatus(msg)) = actions.first() {
@@ -105,7 +108,7 @@ impl SprintTable {
                 }
             }
         }
-        
+
         actions
     }
 

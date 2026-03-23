@@ -116,12 +116,10 @@ impl PbiListApp {
                     JiraCommand::OpenRawPbiJson => {
                         self.selected_pbi = Some(detail.pbi.clone());
                     }
-                    JiraCommand::OpenInBrowser => {
-                        match open_pbi_in_browser(&detail.pbi.key) {
-                            Ok(msg) => self.footer.set_status(msg),
-                            Err(msg) => self.footer.set_status(msg),
-                        }
-                    }
+                    JiraCommand::OpenInBrowser => match open_pbi_in_browser(&detail.pbi.key) {
+                        Ok(msg) => self.footer.set_status(msg),
+                        Err(msg) => self.footer.set_status(msg),
+                    },
                     JiraCommand::Refresh => {
                         let api = self.list_service.jira_api();
                         if let Err(e) = crate::jira::pbi::fetch_pbi_details(api, &mut detail.pbi) {

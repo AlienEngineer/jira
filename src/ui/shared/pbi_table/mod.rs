@@ -189,7 +189,11 @@ impl PbiTable {
 
     /// Process a key press for Lua keymaps only.
     /// Navigation and action keys should be handled by the parent app.
-    pub fn handle_lua_keymap(&self, key: KeyCode, scopes: &[crate::config::keymaps::Scope]) -> Vec<TableAction> {
+    pub fn handle_lua_keymap(
+        &self,
+        key: KeyCode,
+        scopes: &[crate::config::keymaps::Scope],
+    ) -> Vec<TableAction> {
         let keycode = keycode_to_string(key);
         if let Some(collection) = get_keymap_collection() {
             let guard = collection.lock().expect("Failed to lock keymaps");
@@ -274,9 +278,7 @@ impl PbiTable {
             PbiColumn::Type => {
                 Cell::from(pbi.issue_type.clone()).style(Style::default().fg(Color::DarkGray))
             }
-            PbiColumn::Key => {
-                Cell::from(pbi.key.clone()).style(Style::default().fg(Color::Cyan))
-            }
+            PbiColumn::Key => Cell::from(pbi.key.clone()).style(Style::default().fg(Color::Cyan)),
             PbiColumn::Summary => Cell::from(pbi.summary.clone()),
             PbiColumn::Status => Cell::from(pbi.status.clone()).style(status_color(&pbi.status)),
             PbiColumn::Assignee => Cell::from(pbi.assignee.clone()),
