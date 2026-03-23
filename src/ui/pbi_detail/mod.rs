@@ -46,9 +46,10 @@ impl PbiDetailView {
 
     fn handle_lua_keymaps(&mut self, key: KeyCode) {
         let keycode = keycode_to_string(key);
+        let scopes = [Scope::Global, Scope::Pbi];
         if let Some(collection) = get_keymap_collection() {
             let guard = collection.lock().expect("Failed to lock keymaps");
-            if let Some(keymap) = guard.get_keymap(&keycode) {
+            if let Some(keymap) = guard.get_keymap(&keycode, &scopes) {
                 if let Err(e) = keymap.execute() {
                     eprintln!("Failed to execute keymap '{}': {}", keycode, e);
                 }

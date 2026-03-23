@@ -6,7 +6,7 @@ use std::sync::Arc;
 use crate::config;
 use crate::ioc::interface::Interface;
 use crate::jira::api::JiraApi;
-use crate::jira::pbi::Pbi;
+use crate::jira::pbi::{last_in_progress_at, Pbi};
 
 // ── Filter fields ─────────────────────────────────────────────────────────────
 
@@ -161,6 +161,9 @@ pub trait ListService: Interface {
     /// Fetch issues matching `filter` from the Jira API.
     fn fetch_with_filter(&self, filter: &ListFilter) -> Result<Vec<Pbi>, String>;
 
+    /// Get access to the underlying JiraApi.
+    fn jira_api(&self) -> &dyn JiraApi;
+
     /// Convenience wrapper used by the non-TUI code path.
     fn list_issues(&self, matches: &ArgMatches) -> Vec<Pbi> {
         let filter = ListFilter::from_matches(matches);
@@ -203,7 +206,7 @@ fn pbi_from_json(issue: &json::JsonValue) -> Pbi {
             .filter_map(|l| l.as_str().map(|s| s.to_string()))
             .collect(),
         loaded: false,
-        in_progress_at: None,
+        in_progress_at: last_in_progress_at(&issue["changelog"]),
         resolved_at: fields["resolutiondate"].as_str().map(|s| s.to_string()),
         raw: json::stringify_pretty::<JsonValue>(fields.clone(), 2),
 
@@ -236,7 +239,7 @@ impl ListService for DefaultListService {
         let response = self
             .jira_api
             .get_v3(&format!(
-                "search?maxResults={count}&startAt={offset}&jql={jql}"
+                "search?maxResults={count}&startAt={offset}&expand=changelog&jql={jql}"
             ))
             .map_err(|e| e.to_string())?;
 
@@ -245,6 +248,10 @@ impl ListService for DefaultListService {
             return Ok(vec![]);
         }
         Ok(issues.members().map(pbi_from_json).collect())
+    }
+
+    fn jira_api(&self) -> &dyn JiraApi {
+        self.jira_api.as_ref()
     }
 }
 

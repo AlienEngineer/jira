@@ -1,30 +1,19 @@
+use crate::config::keymaps::Scope;
 use crate::config::JiraConfig;
-use crate::jira::pbi::{pbi_elapsed_display, Pbi};
+use crate::jira::pbi::Pbi;
 use crate::jira::sprint::{sort_by_status, Sprint, SprintService};
-use crate::lua::init::get_keymap_collection;
+use crate::lua::init::JiraCommand;
 use crate::plugins::lua_plugin::{execute_plugins, JiraContext};
-use crate::ui::keycode_mapper::keycode_to_string;
+use crate::ui::shared::pbi_table::{ColumnConfig, PbiTable, TableAction};
 use crossterm::event::KeyCode;
-use ratatui::{
-    layout::{Alignment, Constraint, Rect},
-    style::{Color, Modifier, Style},
-    widgets::{Block, Cell, Row, Table, TableState},
-    Frame,
-};
+use ratatui::{layout::Rect, Frame};
 use std::sync::{mpsc, Arc};
 use std::thread;
-
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
-use std::io::{Error, ErrorKind};
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-use std::process::Command;
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
-use std::process::ExitStatus;
 
 // ── Internal channel message ─────────────────────────────────────────────────
 
 enum LoadMsg {
-    SprintRefreshed(Vec<Pbi>), // pbis, sprint_end_date
+    SprintRefreshed(Vec<Pbi>),
     SprintError(String),
 }
 
@@ -35,32 +24,12 @@ pub struct LoadUpdate {
     pub status: String,
 }
 
-/// Actions that `SprintTable::handle_key` returns to the coordinator (`SprintApp`).
-/// The table itself only manages its own state; cross-cutting concerns are
-/// delegated upward through these actions.
-#[allow(dead_code)]
-pub enum TableAction {
-    /// User pressed q/Q/Esc — signal the app to exit.
-    Exit,
-    /// Display this string in the footer.
-    SetStatus(String),
-    /// Clear the footer status.
-    ClearStatus,
-    /// PBI data changed; the caller should persist the cache.
-    SaveCache,
-    /// Open the detail view for the PBI at this index.
-    OpenDetail(Box<Pbi>),
-    /// Open the plugin list view.
-    OpenPlugins,
-}
-
 // ── SprintTable ──────────────────────────────────────────────────────────────
 
-/// Interactive PBI table component.
+/// Sprint-specific table component wrapping the shared PbiTable.
 ///
 /// Responsibilities:
-/// - Rendering the PBI list
-/// - Keyboard navigation (j / k / arrows)
+/// - Rendering the PBI list with sprint-specific columns (indicator, age)
 /// - Loading PBI details from Jira (f = single, F = all async)
 /// - Starting work on a ticket (Enter): run Lua plugins with the selected PBI as context
 ///
@@ -69,22 +38,17 @@ pub enum TableAction {
 pub struct SprintTable {
     pub sprint: Sprint,
     sprint_service: Arc<dyn SprintService>,
-    pub table_state: TableState,
-    loading_idx: Option<usize>,
+    table: PbiTable,
     load_rx: Option<mpsc::Receiver<LoadMsg>>,
 }
 
 impl SprintTable {
     pub fn new(sprint: Sprint, sprint_service: Arc<dyn SprintService>) -> Self {
-        let mut table_state = TableState::default();
-        if !sprint.pbis.is_empty() {
-            table_state.select(Some(0));
-        }
+        let table = PbiTable::with_initial_selection(ColumnConfig::sprint_view(), sprint.pbis.len());
         Self {
             sprint,
             sprint_service,
-            table_state,
-            loading_idx: None,
+            table,
             load_rx: None,
         }
     }
@@ -94,11 +58,55 @@ impl SprintTable {
         &self.sprint.pbis
     }
 
-    /// Get a clone of the currently selected PBI, if any.
-    pub fn get_selected_pbi_cloned(&self) -> Option<Pbi> {
-        self.table_state
-            .selected()
-            .map(|i| self.sprint.pbis[i].clone())
+    /// Get access to the JiraApi for fetching PBI details.
+    pub fn jira_api(&self) -> &dyn crate::jira::api::JiraApi {
+        self.sprint_service.jira_api()
+    }
+
+    // ── Command handling ──────────────────────────────────────────────────────
+
+    /// Handle a JiraCommand and return any actions for the parent app.
+    pub fn handle_command(&mut self, cmd: &JiraCommand) -> Vec<TableAction> {
+        // Let the shared PbiTable handle common commands
+        let mut actions = self.table.handle_command(cmd, &self.sprint.pbis);
+
+        // Handle sprint-specific commands
+        match cmd {
+            JiraCommand::RefreshAll => {
+                self.start_load_all_public();
+                actions.push(TableAction::SetStatus("Refreshing sprint from Jira…".into()));
+            }
+            JiraCommand::OpenPluginList => {
+                actions.push(TableAction::OpenPlugins);
+            }
+            JiraCommand::StartWork => {
+                actions.extend(self.start_work_on_selected());
+            }
+            JiraCommand::Print(msg) => {
+                actions.push(TableAction::SetStatus(msg.clone()));
+            }
+            _ => {}
+        }
+
+        actions
+    }
+
+    /// Load details for a single PBI at the given index.
+    pub fn load_pbi(&mut self, idx: usize) -> Vec<TableAction> {
+        let api = self.sprint_service.jira_api();
+        let mut actions = self.table.load_pbi(idx, &mut self.sprint.pbis, api);
+        
+        // Sprint-specific: sort by status and save cache on success
+        if !actions.is_empty() {
+            if let Some(TableAction::SetStatus(msg)) = actions.first() {
+                if msg.starts_with("Loaded") {
+                    sort_by_status(&mut self.sprint.pbis);
+                    actions.push(TableAction::SaveCache);
+                }
+            }
+        }
+        
+        actions
     }
 
     // ── Background refresh ────────────────────────────────────────────────────
@@ -159,94 +167,17 @@ impl SprintTable {
         })
     }
 
-    // ── Navigation ────────────────────────────────────────────────────────────
-
-    pub fn navigate_down(&mut self) {
-        let next = self.table_state.selected().map_or(0, |i| {
-            if i >= self.sprint.pbis.len().saturating_sub(1) {
-                0
-            } else {
-                i + 1
-            }
-        });
-        self.table_state.select(Some(next));
-    }
-
-    pub fn navigate_up(&mut self) {
-        let prev = self.table_state.selected().map_or(0, |i| {
-            if i == 0 {
-                self.sprint.pbis.len().saturating_sub(1)
-            } else {
-                i - 1
-            }
-        });
-        self.table_state.select(Some(prev));
-    }
-
-    // ── Single-item load (f) ──────────────────────────────────────────────────
-
-    pub fn load_selected(&mut self) -> Vec<TableAction> {
-        let Some(i) = self.table_state.selected() else {
-            return vec![];
-        };
-        let key = self.sprint.pbis[i].key.clone();
-        self.loading_idx = Some(i);
-
-        let actions = match self
-            .sprint_service
-            .fetch_pbi_details(&mut self.sprint.pbis[i])
-        {
-            Ok(()) => {
-                sort_by_status(&mut self.sprint.pbis);
-                vec![
-                    TableAction::SetStatus(format!("Loaded {key}")),
-                    TableAction::SaveCache,
-                ]
-            }
-            Err(e) => {
-                vec![TableAction::SetStatus(format!("Error loading {key}: {e}"))]
-            }
-        };
-
-        self.loading_idx = None;
-        actions
-    }
-
-    // ── Open in browser (o) ───────────────────────────────────────────────────
-
-    pub fn open_selected_in_browser(&self) -> Vec<TableAction> {
-        let pbi = self.get_selected_pbi();
-        let config = JiraConfig::load().unwrap_or_default();
-        let url = format!("{}/browse/{}", config.namespace, pbi.key);
-
-        #[cfg(target_os = "macos")]
-        let result = Command::new("open").arg(&url).status();
-        #[cfg(target_os = "linux")]
-        let result = Command::new("xdg-open").arg(&url).status();
-        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-        let result: Result<ExitStatus, Error> =
-            Err(Error::new(ErrorKind::Unsupported, "unsupported platform"));
-
-        match result {
-            Ok(_) => vec![TableAction::SetStatus(format!("Opened {url}"))],
-            Err(e) => vec![TableAction::SetStatus(format!(
-                "Failed to open browser: {e}"
-            ))],
-        }
-    }
-
-    fn get_selected_pbi(&self) -> &Pbi {
-        &self.sprint.pbis[self.table_state.selected().unwrap_or_default()]
-    }
-
     // ── Start work (Enter) ────────────────────────────────────────────────────
 
     pub fn start_work_on_selected(&mut self) -> Vec<TableAction> {
+        let Some(pbi) = self.table.selected(&self.sprint.pbis) else {
+            return vec![];
+        };
         let mut actions: Vec<TableAction> = Vec::new();
         let ctx = JiraContext {
             config: JiraConfig::load().unwrap_or_default(),
             sprint: self.sprint.clone(),
-            selected_pbi: self.get_selected_pbi().clone(),
+            selected_pbi: pbi.clone(),
         };
         if let Err(e) = execute_plugins(&ctx, |result| match result {
             Ok(msg) => actions.push(TableAction::SetStatus(msg)),
@@ -263,133 +194,14 @@ impl SprintTable {
 
     /// Process a key press and return any [`TableAction`]s for `SprintApp`.
     pub fn handle_key(&mut self, key: KeyCode) -> Vec<TableAction> {
-        self.handle_lua_keymaps(key)
+        let scopes = [Scope::Sprint, Scope::Global, Scope::Pbi];
+        self.table.handle_lua_keymap(key, &scopes)
     }
 
-    fn handle_lua_keymaps(&mut self, key: KeyCode) -> Vec<TableAction> {
-        let keycode = keycode_to_string(key);
-        if let Some(collection) = get_keymap_collection() {
-            let guard = collection.lock().expect("Failed to lock keymaps");
-            if let Some(keymap) = guard.get_keymap(&keycode) {
-                match keymap.execute() {
-                    Ok(result) => {
-                        if !result.is_empty() {
-                            return Vec::from([TableAction::SetStatus(result)]);
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to execute keymap '{}': {}", keycode, e);
-                    }
-                }
-            }
-        }
-        vec![]
-    }
-
-    /*
-    fn append_key_maps(spans: &mut Vec<Span<'_>>) {
-        if let Some(collection) = get_keymap_collection() {
-            let keymaps = collection.get_keymaps();
-            let plugin_spans: Vec<Span> = keymaps
-                .into_iter()
-                .flat_map(|k| {
-                    [
-                        Span::styled(k.key, Style::default().fg(Color::Cyan).bold()),
-                        Span::raw(format!(" {}  ", k.description)),
-                    ]
-                })
-                .collect();
-
-            spans.push(Span::raw("  ")); // Add spacing before plugin keymaps
-            spans.extend(plugin_spans);
-        }
-    }
-    */
     // ── Rendering ─────────────────────────────────────────────────────────────
 
-    /// Render the table (and the branch-input popup when active).
+    /// Render the table.
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
-        let header = Row::new(
-            ["", "Type", "Key", "Summary", "Status", "Assignee", "Age"]
-                .iter()
-                .map(|h| {
-                    Cell::from(*h).style(
-                        Style::default()
-                            .fg(Color::Yellow)
-                            .add_modifier(Modifier::BOLD),
-                    )
-                }),
-        )
-        .style(Style::default().bg(Color::DarkGray))
-        .height(1);
-
-        let rows: Vec<Row> = self
-            .sprint
-            .pbis
-            .iter()
-            .enumerate()
-            .map(|(idx, pbi)| {
-                let status_style = match pbi.status.to_lowercase().as_str() {
-                    s if s.contains("done") || s.contains("closed") => {
-                        Style::default().fg(Color::Green)
-                    }
-                    s if s.contains("progress") => Style::default().fg(Color::Blue),
-                    s if s.contains("review") => Style::default().fg(Color::Magenta),
-                    s if s.contains("blocked") => Style::default().fg(Color::Red),
-                    s if s.contains("resolved") => Style::default().fg(Color::Green),
-                    _ => Style::default().fg(Color::White),
-                };
-
-                let indicator = if self.loading_idx == Some(idx) {
-                    Cell::from("⟳").style(
-                        Style::default()
-                            .fg(Color::Yellow)
-                            .add_modifier(Modifier::BOLD),
-                    )
-                } else if pbi.loaded {
-                    Cell::from("✓").style(Style::default().fg(Color::Green))
-                } else {
-                    Cell::from(" ")
-                };
-
-                Row::new(vec![
-                    indicator,
-                    Cell::from(pbi.issue_type.clone()),
-                    Cell::from(pbi.key.clone()).style(Style::default().fg(Color::Cyan)),
-                    Cell::from(pbi.summary.clone()),
-                    Cell::from(pbi.status.clone()).style(status_style),
-                    Cell::from(pbi.assignee.clone()),
-                    Cell::from(pbi_elapsed_display(pbi))
-                        .style(Style::default().fg(Color::DarkGray)),
-                ])
-            })
-            .collect();
-
-        let table_widget = Table::new(
-            rows,
-            [
-                Constraint::Length(2),
-                Constraint::Length(12),
-                Constraint::Length(12),
-                Constraint::Min(40),
-                Constraint::Length(18),
-                Constraint::Length(20),
-                Constraint::Length(5),
-            ],
-        )
-        .header(header)
-        .block(
-            Block::bordered()
-                .title(format!(" {} items ", self.sprint.pbis.len()))
-                .title_alignment(Alignment::Right),
-        )
-        .row_highlight_style(
-            Style::default()
-                .bg(Color::Blue)
-                .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol(">> ");
-
-        frame.render_stateful_widget(table_widget, area, &mut self.table_state);
+        self.table.render(frame, area, &self.sprint.pbis);
     }
 }

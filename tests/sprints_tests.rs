@@ -3,7 +3,7 @@ use jira::jira::sprint::{DefaultSprintService, SprintService};
 use std::sync::Arc;
 
 mod tests {
-    use jira::jira::pbi::Pbi;
+    use jira::jira::pbi::{fetch_pbi_details, Pbi};
 
     use super::*;
 
@@ -238,8 +238,7 @@ mod tests {
             project: "".to_string(),
         };
 
-        service
-            .fetch_pbi_details(&mut pbi)
+        fetch_pbi_details(service.jira_api(), &mut pbi)
             .expect("expected fake Jira response to populate PBI details");
 
         assert_eq!(

@@ -62,20 +62,20 @@ fn inject_context(lua: &Lua, ctx: &JiraContext) -> Result<()> {
 }
 
 fn pbi_to_lua(lua: &Lua, pbi: &Pbi) -> Result<Table> {
-    let tbl = lua.create_table()?;
-    tbl.set("key", pbi.key.clone())?;
-    tbl.set("summary", pbi.summary.clone())?;
-    tbl.set("status", pbi.status.clone())?;
-    tbl.set("assignee", pbi.assignee.clone())?;
-    tbl.set("issue_type", pbi.issue_type.clone())?;
-    tbl.set("description", pbi.description.clone())?;
-    tbl.set("priority", pbi.priority.clone())?;
-    tbl.set("story_points", pbi.story_points)?;
-    tbl.set("labels", pbi.labels.clone())?;
-    tbl.set("in_progress_at", pbi.in_progress_at.clone())?;
-    tbl.set("resolved_at", pbi.resolved_at.clone())?;
-    tbl.set("elapsed_minutes", pbi.elapsed_minutes())?;
-    Ok(tbl)
+    let table = lua.create_table()?;
+    table.set("key", pbi.key.clone())?;
+    table.set("summary", pbi.summary.clone())?;
+    table.set("status", pbi.status.clone())?;
+    table.set("assignee", pbi.assignee.clone())?;
+    table.set("issue_type", pbi.issue_type.clone())?;
+    table.set("description", pbi.description.clone())?;
+    table.set("priority", pbi.priority.clone())?;
+    table.set("story_points", pbi.story_points)?;
+    table.set("labels", pbi.labels.clone())?;
+    table.set("in_progress_at", pbi.in_progress_at.clone())?;
+    table.set("resolved_at", pbi.resolved_at.clone())?;
+    table.set("elapsed_minutes", pbi.elapsed_minutes())?;
+    Ok(table)
 }
 
 fn execute_lua_script(script: &str, ctx: &JiraContext) -> Result<String> {

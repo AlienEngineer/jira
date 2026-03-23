@@ -4,7 +4,7 @@ mod sprint_table;
 
 use progress_block::{ProgressBlock, SprintProgressData};
 use sprint_goal::SprintGoalWidget;
-use sprint_table::{SprintTable, TableAction};
+use sprint_table::SprintTable;
 
 use crate::config::keymaps::Scope;
 use crate::jira::pbi::Pbi;
@@ -13,12 +13,13 @@ use crate::lua::init::{take_command_receiver, JiraCommand};
 use crate::prelude::Result;
 use crate::ui::pbi_detail::PbiDetailView;
 use crate::ui::plugin_list::PluginListView;
+use crate::ui::shared::editor::{open_pbi_in_browser, open_raw_in_editor};
 use crate::ui::shared::footer::Footer;
+use crate::ui::shared::pbi_table::TableAction;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::{DefaultTerminal, Frame};
 use std::env;
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::mpsc::Receiver;
@@ -76,7 +77,7 @@ impl SprintApp {
 
             if let Some(pbi) = self.selected_pbi.take() {
                 ratatui::restore();
-                self.open_raw_in_editor(&pbi);
+                open_raw_in_editor(&pbi);
                 *terminal = ratatui::init();
             }
 
@@ -110,6 +111,9 @@ impl SprintApp {
                     JiraCommand::GoLeft => {
                         self.active_view = ActiveView::Sprint;
                     }
+                    JiraCommand::Quit => {
+                        self.exit = true;
+                    }
                     JiraCommand::GoUp => {
                         detail.scroll_up();
                     }
@@ -118,6 +122,20 @@ impl SprintApp {
                     }
                     JiraCommand::OpenRawPbiJson => {
                         self.selected_pbi = Some(detail.pbi.clone());
+                    }
+                    JiraCommand::OpenInBrowser => {
+                        match open_pbi_in_browser(&detail.pbi.key) {
+                            Ok(msg) => self.footer.set_status(msg),
+                            Err(msg) => self.footer.set_status(msg),
+                        }
+                    }
+                    JiraCommand::Refresh => {
+                        let api = self.table.jira_api();
+                        if let Err(e) = crate::jira::pbi::fetch_pbi_details(api, &mut detail.pbi) {
+                            self.footer.set_status(format!("Error: {e}"));
+                        } else {
+                            self.footer.set_status(format!("Loaded {}", detail.pbi.key));
+                        }
                     }
                     _ => {}
                 },
@@ -143,49 +161,7 @@ impl SprintApp {
     }
 
     fn process_sprint_command(&mut self, cmd: JiraCommand) {
-        let actions = match cmd {
-            JiraCommand::GoUp => {
-                self.table.navigate_up();
-                vec![TableAction::ClearStatus]
-            }
-            JiraCommand::GoDown => {
-                self.table.navigate_down();
-                vec![TableAction::ClearStatus]
-            }
-            JiraCommand::GoLeft => vec![], // no-op in sprint view
-            JiraCommand::GoRight => {
-                if let Some(pbi) = self.table.get_selected_pbi_cloned() {
-                    vec![TableAction::OpenDetail(Box::new(pbi))]
-                } else {
-                    vec![]
-                }
-            }
-            JiraCommand::OpenPbiDetails => {
-                if let Some(pbi) = self.table.get_selected_pbi_cloned() {
-                    vec![TableAction::OpenDetail(Box::new(pbi))]
-                } else {
-                    vec![]
-                }
-            }
-            JiraCommand::Quit => vec![TableAction::Exit],
-            JiraCommand::Refresh => self.table.load_selected(),
-            JiraCommand::RefreshAll => {
-                self.table.start_load_all_public();
-                vec![TableAction::SetStatus(
-                    "Refreshing sprint from Jira…".into(),
-                )]
-            }
-            JiraCommand::OpenInBrowser => self.table.open_selected_in_browser(),
-            JiraCommand::OpenPluginList => vec![TableAction::OpenPlugins],
-            JiraCommand::OpenRawPbiJson => {
-                if let Some(pbi) = self.table.get_selected_pbi_cloned() {
-                    self.selected_pbi = Some(pbi);
-                }
-                vec![]
-            }
-            JiraCommand::StartWork => self.table.start_work_on_selected(),
-            _ => vec![],
-        };
+        let actions = self.table.handle_command(&cmd);
         for action in actions {
             self.dispatch(action);
         }
@@ -285,28 +261,6 @@ impl SprintApp {
         plugin_list.handle_key(key);
     }
 
-    // TODO: duplicated with sprint_list, maybe move to util?
-    fn open_raw_in_editor(&self, pbi: &Pbi) {
-        let json = pbi.raw.clone();
-        let key = pbi.key.as_str();
-        let tmp_path = env::temp_dir().join(format!("jira_raw_{key}.json"));
-        if let Err(e) = fs::write(&tmp_path, &json) {
-            eprintln!("Failed to write temp file: {e}");
-            return;
-        }
-
-        let editor = env::var("VISUAL")
-            .or_else(|_| env::var("EDITOR"))
-            .unwrap_or_else(|_| "vi".to_string());
-
-        let _ = Command::new(&editor)
-            .arg(&tmp_path)
-            .status()
-            .map_err(|e| eprintln!("Failed to open editor '{editor}': {e}"));
-
-        let _ = fs::remove_file(&tmp_path);
-    }
-
     fn dispatch(&mut self, action: TableAction) {
         match action {
             TableAction::Exit => self.exit = true,
@@ -320,6 +274,18 @@ impl SprintApp {
             TableAction::OpenPlugins => {
                 self.active_view = ActiveView::PluginList(Box::default());
             }
+            TableAction::OpenRaw(idx) => {
+                if let Some(pbi) = self.table.pbis().get(idx) {
+                    self.selected_pbi = Some(pbi.clone());
+                }
+            }
+            TableAction::Refresh(idx) => {
+                let actions = self.table.load_pbi(idx);
+                for action in actions {
+                    self.dispatch(action);
+                }
+            }
+            _ => {} // Other actions not used in sprint view
         }
     }
 }

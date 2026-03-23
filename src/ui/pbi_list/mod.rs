@@ -1,8 +1,6 @@
 mod filter_editor;
-mod table;
 
 use filter_editor::{FilterEditor, FilterEditorAction};
-use table::IssueTable;
 
 use crate::config::keymaps::Scope;
 use crate::jira::lists::{ListFilter, ListService};
@@ -10,7 +8,9 @@ use crate::jira::pbi::Pbi;
 use crate::lua::init::{take_command_receiver, JiraCommand};
 use crate::prelude::Result;
 use crate::ui::pbi_detail::PbiDetailView;
+use crate::ui::shared::editor::{open_pbi_in_browser, open_raw_in_editor};
 use crate::ui::shared::footer::Footer;
+use crate::ui::shared::pbi_table::{ColumnConfig, PbiTable, TableAction};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::{
     layout::{Constraint, Layout},
@@ -19,9 +19,6 @@ use ratatui::{
     DefaultTerminal, Frame,
 };
 
-use std::env;
-use std::fs;
-use std::process::Command;
 use std::sync::mpsc::Receiver;
 use std::sync::{mpsc, Arc};
 use std::thread;
@@ -48,7 +45,7 @@ pub struct PbiListApp {
     issues: Vec<Pbi>,
     filter: ListFilter,
     list_service: Arc<dyn ListService>,
-    table: IssueTable,
+    table: PbiTable,
     footer: Footer,
     active_view: ActiveView,
     exit: bool,
@@ -59,7 +56,7 @@ pub struct PbiListApp {
 
 impl PbiListApp {
     pub fn new(issues: Vec<Pbi>, filter: ListFilter, list_service: Arc<dyn ListService>) -> Self {
-        let table = IssueTable::new(issues.len());
+        let table = PbiTable::with_initial_selection(ColumnConfig::list_view(), issues.len());
         Self {
             table,
             issues,
@@ -81,7 +78,7 @@ impl PbiListApp {
 
             if let Some(pbi) = self.selected_pbi.take() {
                 ratatui::restore();
-                self.open_raw_in_editor(&pbi);
+                open_raw_in_editor(&pbi);
                 *terminal = ratatui::init();
             }
 
@@ -107,6 +104,9 @@ impl PbiListApp {
                     JiraCommand::GoLeft => {
                         self.active_view = ActiveView::List;
                     }
+                    JiraCommand::Quit => {
+                        self.exit = true;
+                    }
                     JiraCommand::GoUp => {
                         detail.scroll_up();
                     }
@@ -115,6 +115,20 @@ impl PbiListApp {
                     }
                     JiraCommand::OpenRawPbiJson => {
                         self.selected_pbi = Some(detail.pbi.clone());
+                    }
+                    JiraCommand::OpenInBrowser => {
+                        match open_pbi_in_browser(&detail.pbi.key) {
+                            Ok(msg) => self.footer.set_status(msg),
+                            Err(msg) => self.footer.set_status(msg),
+                        }
+                    }
+                    JiraCommand::Refresh => {
+                        let api = self.list_service.jira_api();
+                        if let Err(e) = crate::jira::pbi::fetch_pbi_details(api, &mut detail.pbi) {
+                            self.footer.set_status(format!("Error: {e}"));
+                        } else {
+                            self.footer.set_status(format!("Loaded {}", detail.pbi.key));
+                        }
                     }
                     _ => {}
                 },
@@ -126,38 +140,20 @@ impl PbiListApp {
     }
 
     fn process_list_command(&mut self, cmd: JiraCommand) {
+        // Let the table handle common commands (navigation, open detail, browser, etc.)
+        let actions = self.table.handle_command(&cmd, &self.issues);
+        for action in actions {
+            self.dispatch(action);
+        }
+
+        // Handle list-specific commands
         match cmd {
-            JiraCommand::GoUp => {
-                self.table.navigate_up(self.issues.len());
-            }
-            JiraCommand::GoDown => {
-                self.table.navigate_down(self.issues.len());
-            }
             JiraCommand::GoLeft => {
                 // no-op or back
             }
-            JiraCommand::GoRight | JiraCommand::OpenPbiDetails => {
-                if let Some(pbi) = self.get_selected_pbi() {
-                    self.active_view = ActiveView::Detail(Box::new(PbiDetailView::new(pbi)));
-                }
-            }
-            JiraCommand::Quit => {
-                self.exit = true;
-            }
-            JiraCommand::Refresh | JiraCommand::RefreshAll => {
+            JiraCommand::RefreshAll => {
                 let filter = self.filter.clone();
                 self.start_fetch(filter);
-            }
-            JiraCommand::OpenInBrowser => {
-                self.open_selected_in_browser();
-            }
-            JiraCommand::OpenPluginList => {
-                // Not implemented for pbi_list
-            }
-            JiraCommand::OpenRawPbiJson => {
-                if let Some(pbi) = self.get_selected_pbi() {
-                    self.selected_pbi = Some(pbi);
-                }
             }
             JiraCommand::OpenFilter => {
                 let editor = FilterEditor::new(self.filter.clone());
@@ -165,60 +161,6 @@ impl PbiListApp {
             }
             _ => {}
         }
-    }
-
-    fn get_selected_pbi(&self) -> Option<Pbi> {
-        self.table
-            .table_state
-            .selected()
-            .and_then(|i| self.issues.get(i).cloned())
-    }
-
-    fn open_selected_in_browser(&mut self) {
-        use crate::config::JiraConfig;
-
-        if let Some(pbi) = self.get_selected_pbi() {
-            let config = JiraConfig::load().unwrap_or_default();
-            let url = format!("{}/browse/{}", config.namespace, pbi.key);
-
-            #[cfg(target_os = "macos")]
-            let result = Command::new("open").arg(&url).status();
-            #[cfg(target_os = "linux")]
-            let result = Command::new("xdg-open").arg(&url).status();
-            #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-            let result: std::result::Result<std::process::ExitStatus, std::io::Error> = Err(
-                std::io::Error::new(std::io::ErrorKind::Unsupported, "unsupported platform"),
-            );
-
-            match result {
-                Ok(_) => self.footer.set_status(format!("Opened {url}")),
-                Err(e) => self
-                    .footer
-                    .set_status(format!("Failed to open browser: {e}")),
-            }
-        }
-    }
-
-    // TODO: duplicated with sprint_list, maybe move to util?
-    fn open_raw_in_editor(&self, pbi: &Pbi) {
-        let json = pbi.raw.clone();
-        let key = pbi.key.as_str();
-        let tmp_path = env::temp_dir().join(format!("jira_raw_{key}.json"));
-        if let Err(e) = fs::write(&tmp_path, &json) {
-            eprintln!("Failed to write temp file: {e}");
-            return;
-        }
-
-        let editor = env::var("VISUAL")
-            .or_else(|_| env::var("EDITOR"))
-            .unwrap_or_else(|_| "vi".to_string());
-
-        let _ = Command::new(&editor)
-            .arg(&tmp_path)
-            .status()
-            .map_err(|e| eprintln!("Failed to open editor '{editor}': {e}"));
-
-        let _ = fs::remove_file(&tmp_path);
     }
 
     // ── Background fetch ──────────────────────────────────────────────────────
@@ -337,7 +279,35 @@ impl PbiListApp {
     }
 
     fn handle_list_key(&mut self, key: crossterm::event::KeyCode) {
-        self.table.handle_key(key);
+        let scopes = [Scope::PbiList, Scope::Global, Scope::Pbi];
+        let actions = self.table.handle_lua_keymap(key, &scopes);
+        for action in actions {
+            self.dispatch(action);
+        }
+    }
+
+    fn dispatch(&mut self, action: TableAction) {
+        match action {
+            TableAction::Exit => self.exit = true,
+            TableAction::SetStatus(msg) => self.footer.set_status(msg),
+            TableAction::ClearStatus => self.footer.clear_status(),
+            TableAction::OpenDetail(pbi) => {
+                self.active_view = ActiveView::Detail(Box::new(PbiDetailView::new(*pbi)));
+            }
+            TableAction::OpenRaw(idx) => {
+                if let Some(pbi) = self.issues.get(idx) {
+                    self.selected_pbi = Some(pbi.clone());
+                }
+            }
+            TableAction::Refresh(idx) => {
+                let api = self.list_service.jira_api();
+                let actions = self.table.load_pbi(idx, &mut self.issues, api);
+                for action in actions {
+                    self.dispatch(action);
+                }
+            }
+            _ => {} // Other actions not used in list view
+        }
     }
 
     fn handle_detail_key(&mut self, key: KeyCode) {

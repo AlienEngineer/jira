@@ -69,15 +69,18 @@ impl KeyMapCollection {
         description: Option<&str>,
         scope: Option<&str>,
     ) -> prelude::Result<()> {
-        if self.keymaps.iter().any(|k| k.key == key) {
-            return Err(format!(r#"Key '{}' is already registered"#, key).into());
+        let parsed_scope: Scope = scope.unwrap_or("global").parse().unwrap_or(Scope::Global);
+        
+        // Allow same key in different scopes
+        if self.keymaps.iter().any(|k| k.key == key && k.scope == parsed_scope) {
+            return Err(format!(r#"Key '{}' is already registered for scope {:?}"#, key, parsed_scope).into());
         }
 
         self.keymaps.push(KeyMap {
             key: key.to_string(),
             func: Arc::new(registry_key),
             description: description.map(|s| s.to_string()),
-            scope: scope.unwrap_or("global").parse().unwrap_or(Scope::Global),
+            scope: parsed_scope,
             hidden: false,
         });
         Ok(())
@@ -93,9 +96,15 @@ impl KeyMapCollection {
         &self.keymaps
     }
 
-    #[allow(dead_code)]
-    pub fn get_keymap(&self, key: &str) -> Option<&KeyMap> {
-        self.keymaps.iter().find(|k| k.key == key)
+    /// Find a keymap by key that matches any of the given scopes.
+    /// Prioritizes scope-specific keymaps over Global ones.
+    pub fn get_keymap(&self, key: &str, scopes: &[Scope]) -> Option<&KeyMap> {
+        // First try to find a scope-specific match
+        if let Some(keymap) = self.keymaps.iter().find(|k| k.key == key && scopes.contains(&k.scope)) {
+            return Some(keymap);
+        }
+        // Fall back to Global scope
+        self.keymaps.iter().find(|k| k.key == key && k.scope == Scope::Global)
     }
 }
 
@@ -140,7 +149,7 @@ mod test {
     #[test]
     fn getting_an_unregistered_key_returns_none() {
         let keymap = &mut KeyMapCollection::new();
-        let keymap = keymap.get_keymap("y");
+        let keymap = keymap.get_keymap("y", &[Scope::Global]);
 
         assert!(keymap.is_none());
     }
@@ -158,7 +167,7 @@ mod test {
                 None,
             )
             .unwrap();
-        let keymap = keymap.get_keymap("y").unwrap();
+        let keymap = keymap.get_keymap("y", &[Scope::Global]).unwrap();
 
         assert_eq!(keymap.key, "y");
         assert_eq!(
