@@ -178,7 +178,7 @@ pub fn load_sprint_cache(board_id: &str) -> Option<Sprint> {
         goal: data["sprint_goal"].as_string_or(""),
         end_date: data["sprint_end_date"].as_string_or(""),
         pbis,
-        board_id: data["board-id"].as_string_or(board_id),
+        board_id: data["board_id"].as_string_or(board_id),
     })
 }
 
@@ -190,7 +190,7 @@ pub fn save_sprint_cache(sprint: &Sprint) {
         "sprint_goal": sprint.goal.as_str(),
         "sprint_end_date": sprint.end_date.as_str(),
         "pbis": pbis_json,
-        "board-id": sprint.board_id.as_str()
+        "board_id": sprint.board_id.as_str()
     };
 
     let path = cache_path(sprint.board_id.as_str());

@@ -169,6 +169,10 @@ impl SprintApp {
 
     fn process_background_messages(&mut self) {
         if let Some(update) = self.table.process_messages() {
+            if let (Some(name), Some(goal)) = (update.sprint_name, update.sprint_goal) {
+                self.goal.sprint_name = name;
+                self.goal.sprint_goal = goal;
+            }
             self.footer.set_status(update.status);
             self.save_cache();
         }
@@ -285,6 +289,68 @@ impl SprintApp {
             }
             _ => {} // Other actions not used in sprint view
         }
+    }
+
+    // ── Test helpers ──────────────────────────────────────────────────────────
+
+    /// Handle a key event without terminal polling.
+    ///
+    /// This method allows testing the app's key handling without a terminal:
+    /// ```ignore
+    /// app.handle_key_event(KeyCode::Char('j'));
+    /// assert_eq!(app.selected_pbi().unwrap().key, "TEST-2");
+    /// ```
+    pub fn handle_key_event(&mut self, key: KeyCode) {
+        match &mut self.active_view {
+            ActiveView::PbiDetail(_) => self.handle_detail_key(key),
+            ActiveView::PluginList(_) => self.handle_plugin_list_key(key),
+            ActiveView::Sprint => {
+                for action in self.table.handle_key(key) {
+                    self.dispatch(action);
+                }
+            }
+        }
+        self.process_lua_commands();
+    }
+
+    /// Returns the currently selected PBI, if any.
+    pub fn selected_pbi(&self) -> Option<&Pbi> {
+        self.table.selected()
+    }
+
+    /// Returns true if the app should exit.
+    pub fn is_exit(&self) -> bool {
+        self.exit
+    }
+
+    /// Returns true if in detail view.
+    pub fn is_detail_view(&self) -> bool {
+        matches!(self.active_view, ActiveView::PbiDetail(_))
+    }
+
+    /// Returns the list of PBIs.
+    pub fn pbis(&self) -> &[Pbi] {
+        self.table.pbis()
+    }
+
+    /// Returns the sprint name.
+    pub fn sprint_name(&self) -> &str {
+        &self.goal.sprint_name
+    }
+
+    /// Returns the sprint goal.
+    pub fn sprint_goal(&self) -> &str {
+        &self.goal.sprint_goal
+    }
+
+    /// Returns the sprint end date.
+    pub fn sprint_end_date(&self) -> &str {
+        &self.table.sprint.end_date
+    }
+
+    /// Render the app to a frame. Used for testing.
+    pub fn render(&mut self, frame: &mut Frame) {
+        self.draw(frame);
     }
 }
 

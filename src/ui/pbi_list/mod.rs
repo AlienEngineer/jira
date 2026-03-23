@@ -331,6 +331,44 @@ impl PbiListApp {
             None => {}
         }
     }
+
+    // ── Test helpers ──────────────────────────────────────────────────────────
+
+    /// Handle a key event without terminal polling.
+    ///
+    /// This method allows testing the app's key handling without a terminal:
+    /// ```ignore
+    /// app.handle_key_event(KeyCode::Char('j'));
+    /// assert_eq!(app.selected_pbi().unwrap().key, "TEST-2");
+    /// ```
+    pub fn handle_key_event(&mut self, key: KeyCode) {
+        match &mut self.active_view {
+            ActiveView::Detail(_) => self.handle_detail_key(key),
+            ActiveView::FilterEditor(_) => self.handle_filter_editor_key(key),
+            ActiveView::List => self.handle_list_key(key),
+        }
+        self.process_lua_commands();
+    }
+
+    /// Returns the currently selected PBI, if any.
+    pub fn selected_pbi(&self) -> Option<&Pbi> {
+        self.table.selected(&self.issues)
+    }
+
+    /// Returns true if the app should exit.
+    pub fn is_exit(&self) -> bool {
+        self.exit
+    }
+
+    /// Returns true if in detail view.
+    pub fn is_detail_view(&self) -> bool {
+        matches!(self.active_view, ActiveView::Detail(_))
+    }
+
+    /// Returns the list of issues.
+    pub fn issues(&self) -> &[Pbi] {
+        &self.issues
+    }
 }
 
 // ── Non-TUI display (--json path) ─────────────────────────────────────────────

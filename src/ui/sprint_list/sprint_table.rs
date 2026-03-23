@@ -13,7 +13,7 @@ use std::thread;
 // ── Internal channel message ─────────────────────────────────────────────────
 
 enum LoadMsg {
-    SprintRefreshed(Vec<Pbi>),
+    SprintRefreshed(Sprint),
     SprintError(String),
 }
 
@@ -22,6 +22,10 @@ enum LoadMsg {
 /// Carries the result of a completed background refresh for `SprintApp` to act on.
 pub struct LoadUpdate {
     pub status: String,
+    /// Updated sprint name (if refresh succeeded).
+    pub sprint_name: Option<String>,
+    /// Updated sprint goal (if refresh succeeded).
+    pub sprint_goal: Option<String>,
 }
 
 // ── SprintTable ──────────────────────────────────────────────────────────────
@@ -57,6 +61,11 @@ impl SprintTable {
     /// Borrow the current PBI slice (used by `ProgressBlock` at render time).
     pub fn pbis(&self) -> &[Pbi] {
         &self.sprint.pbis
+    }
+
+    /// Returns the currently selected PBI, if any.
+    pub fn selected(&self) -> Option<&Pbi> {
+        self.table.selected(&self.sprint.pbis)
     }
 
     /// Get access to the JiraApi for fetching PBI details.
@@ -123,7 +132,7 @@ impl SprintTable {
         thread::spawn(
             move || match sprint_service.fetch_active_sprint_issues(&board_id) {
                 Ok(s) => {
-                    let _ = tx.send(LoadMsg::SprintRefreshed(s.pbis));
+                    let _ = tx.send(LoadMsg::SprintRefreshed(s));
                 }
                 Err(e) => {
                     let _ = tx.send(LoadMsg::SprintError(e.to_string()));
@@ -157,15 +166,21 @@ impl SprintTable {
         self.load_rx = None; // channel done
 
         Some(match msg {
-            LoadMsg::SprintRefreshed(pbis) => {
-                let count = pbis.len();
-                self.sprint.pbis = pbis;
+            LoadMsg::SprintRefreshed(sprint) => {
+                let count = sprint.pbis.len();
+                let name = sprint.name.clone();
+                let goal = sprint.goal.clone();
+                self.sprint = sprint;
                 LoadUpdate {
                     status: format!("Refreshed — {count} issues loaded"),
+                    sprint_name: Some(name),
+                    sprint_goal: Some(goal),
                 }
             }
             LoadMsg::SprintError(e) => LoadUpdate {
                 status: format!("Error refreshing sprint: {e}"),
+                sprint_name: None,
+                sprint_goal: None,
             },
         })
     }

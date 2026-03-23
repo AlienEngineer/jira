@@ -112,6 +112,26 @@ pub fn take_command_receiver() -> Option<Receiver<JiraCommand>> {
         .and_then(|mut guard| guard.take())
 }
 
+/// Reset the command channel with a new receiver.
+///
+/// This is intended for testing scenarios where multiple apps need to be created.
+/// In production, `take_command_receiver` should only be called once.
+pub fn reset_command_channel() {
+    if let Some(receiver_mutex) = COMMAND_RECEIVER.get() {
+        let (tx, rx) = mpsc::channel();
+        // Replace the sender
+        if let Some(sender_mutex) = COMMAND_SENDER.get() {
+            if let Ok(mut sender) = sender_mutex.lock() {
+                *sender = tx;
+            }
+        }
+        // Restore the receiver
+        if let Ok(mut guard) = receiver_mutex.lock() {
+            *guard = Some(rx);
+        }
+    }
+}
+
 fn send_command(cmd: JiraCommand) {
     if let Some(sender) = COMMAND_SENDER.get() {
         if let Ok(tx) = sender.lock() {
