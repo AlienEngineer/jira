@@ -1,15 +1,17 @@
 use crate::{
     config::{keymaps::KeyMapCollection, JiraConfig},
+    jira::{pbi::Pbi, sprint::Sprint},
     prelude::Result,
 };
-use mlua::{Function, Lua, Value};
+use mlua::{Function, Lua, Table, Value};
 use std::path::Path;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::{fs, sync::OnceLock};
 
 /// Default init.lua configuration content
-const DEFAULT_INIT_LUA: &str = r#"-- keymaps can be added for different funcion calls in jira TUI.
+const DEFAULT_INIT_LUA: &str = r#"
+-- keymaps can be added for different funcion calls in jira TUI.
 -- e.g. jira.keymaps.set(key, function, [description], [scope])
 -- key as string - only single key bindings are allows.
 -- function as lua function, can bind to a jira.cmd
@@ -20,7 +22,6 @@ const DEFAULT_INIT_LUA: &str = r#"-- keymaps can be added for different funcion 
 -- jira.cmd.refresh_all - refresh all lines in the list of pbi's
 -- jira.cmd.open_in_browser - open the currently selected pbi in the browser
 -- jira.cmd.open_filter - open the filter menu to filter the list of pbi's
--- jira.cmd.start_work - start work on the currently selected pbi
 --
 -- GLOBAL
 jira.keymaps.set("j", jira.cmd.go_down)
@@ -182,125 +183,29 @@ pub fn init_lua_config() -> Result<()> {
     let cmd = lua.create_table()?;
 
     // Create command functions that send commands through the channel
-    cmd.set(
-        "go_up",
-        lua.create_function(|_, ()| {
-            send_command(JiraCommand::GoUp);
-            Ok(())
-        })?,
-    )?;
-    cmd.set(
-        "go_down",
-        lua.create_function(|_, ()| {
-            send_command(JiraCommand::GoDown);
-            Ok(())
-        })?,
-    )?;
-    cmd.set(
-        "go_left",
-        lua.create_function(|_, ()| {
-            send_command(JiraCommand::GoLeft);
-            Ok(())
-        })?,
-    )?;
-    cmd.set(
-        "go_right",
-        lua.create_function(|_, ()| {
-            send_command(JiraCommand::GoRight);
-            Ok(())
-        })?,
-    )?;
-    cmd.set(
-        "open_pbi_details",
-        lua.create_function(|_, ()| {
-            send_command(JiraCommand::OpenPbiDetails);
-            Ok(())
-        })?,
-    )?;
-    cmd.set(
-        "quit",
-        lua.create_function(|_, ()| {
-            send_command(JiraCommand::Quit);
-            Ok(())
-        })?,
-    )?;
-    cmd.set(
-        "refresh",
-        lua.create_function(|_, ()| {
-            send_command(JiraCommand::Refresh);
-            Ok(())
-        })?,
-    )?;
-    cmd.set(
-        "refresh_all",
-        lua.create_function(|_, ()| {
-            send_command(JiraCommand::RefreshAll);
-            Ok(())
-        })?,
-    )?;
-    cmd.set(
-        "open_in_browser",
-        lua.create_function(|_, ()| {
-            send_command(JiraCommand::OpenInBrowser);
-            Ok(())
-        })?,
-    )?;
-    cmd.set(
-        "open_plugin_list",
-        lua.create_function(|_, ()| {
-            send_command(JiraCommand::OpenPluginList);
-            Ok(())
-        })?,
-    )?;
-    cmd.set(
-        "open_raw_pbi_json",
-        lua.create_function(|_, ()| {
-            send_command(JiraCommand::OpenRawPbiJson);
-            Ok(())
-        })?,
-    )?;
-    cmd.set(
-        "start_work",
-        lua.create_function(|_, ()| {
-            send_command(JiraCommand::StartWork);
-            Ok(())
-        })?,
-    )?;
-    cmd.set(
-        "open_filter",
-        lua.create_function(|_, ()| {
-            send_command(JiraCommand::OpenFilter);
-            Ok(())
-        })?,
-    )?;
-    cmd.set(
-        "edit_selected",
-        lua.create_function(|_, ()| {
-            send_command(JiraCommand::EditPluginSelected);
-            Ok(())
-        })?,
-    )?;
-    cmd.set(
+    add_lua_function(&lua, &cmd, JiraCommand::GoUp, "go_up")?;
+    add_lua_function(&lua, &cmd, JiraCommand::GoDown, "go_down")?;
+    add_lua_function(&lua, &cmd, JiraCommand::GoLeft, "go_left")?;
+    add_lua_function(&lua, &cmd, JiraCommand::GoRight, "go_right")?;
+    add_lua_function(&lua, &cmd, JiraCommand::OpenPbiDetails, "open_pbi_details")?;
+    add_lua_function(&lua, &cmd, JiraCommand::Quit, "quit")?;
+    add_lua_function(&lua, &cmd, JiraCommand::Refresh, "refresh")?;
+    add_lua_function(&lua, &cmd, JiraCommand::RefreshAll, "refresh_all")?;
+    add_lua_function(&lua, &cmd, JiraCommand::OpenInBrowser, "open_in_browser")?;
+    add_lua_function(&lua, &cmd, JiraCommand::OpenPluginList, "open_plugin_list")?;
+    add_lua_function(&lua, &cmd, JiraCommand::OpenRawPbiJson, "open_raw_pbi_json")?;
+    add_lua_function(&lua, &cmd, JiraCommand::StartWork, "start_work")?;
+    add_lua_function(&lua, &cmd, JiraCommand::OpenFilter, "open_filter")?;
+    add_lua_function(&lua, &cmd, JiraCommand::EditPluginSelected, "edit_selected")?;
+    add_lua_function(
+        &lua,
+        &cmd,
+        JiraCommand::EditPluginSelected,
         "edit_selected_plugin",
-        lua.create_function(|_, ()| {
-            send_command(JiraCommand::EditPluginSelected);
-            Ok(())
-        })?,
     )?;
-    cmd.set(
-        "back",
-        lua.create_function(|_, ()| {
-            send_command(JiraCommand::Back);
-            Ok(())
-        })?,
-    )?;
-    cmd.set(
-        "assign_to_me",
-        lua.create_function(|_, ()| {
-            send_command(JiraCommand::AssignToMe);
-            Ok(())
-        })?,
-    )?;
+    add_lua_function(&lua, &cmd, JiraCommand::Back, "back")?;
+    add_lua_function(&lua, &cmd, JiraCommand::AssignToMe, "assign_to_me")?;
+
     cmd.set(
         "print",
         lua.create_function(|_, msg: String| {
@@ -357,6 +262,22 @@ pub fn init_lua_config() -> Result<()> {
     Ok(())
 }
 
+fn add_lua_function(
+    lua: &Lua,
+    cmd: &mlua::Table,
+    jira_command: JiraCommand,
+    lua_function: &str,
+) -> Result<()> {
+    cmd.set(
+        lua_function,
+        lua.create_function(move |_, ()| {
+            send_command(jira_command.clone());
+            Ok(())
+        })?,
+    )?;
+    Ok(())
+}
+
 /// Execute a keymap action and return the result.
 /// Calls the Lua function associated with the keymap.
 pub fn execute_keymap_action(keymap: &crate::config::keymaps::KeyMap) -> Result<String> {
@@ -410,4 +331,83 @@ fn load_config_scripts(path: &str) -> Result<Vec<String>> {
         }
     }
     Ok(plugins)
+}
+
+#[derive(Debug, Clone)]
+pub struct JiraContext {
+    pub config: JiraConfig,
+    pub sprint: Option<Sprint>,
+    pub selected_pbi: Option<Pbi>,
+}
+
+pub fn create_context(sprint: Option<Sprint>, selected_pbi: Option<Pbi>) -> JiraContext {
+    JiraContext {
+        config: JiraConfig::load().unwrap_or_default(),
+        sprint,
+        selected_pbi,
+    }
+}
+
+/// Inject the full [`JiraContext`] as the `jira_context` global table.
+///
+/// Lua scripts receive:
+/// - `jira_context.config`       — connection settings (namespace, token, …)
+/// - `jira_context.sprint`       — active sprint (name, goal, end_date, pbis[])
+/// - `jira_context.selected_pbi` — the currently selected PBI, or `nil`
+pub fn inject_context(ctx: &JiraContext) -> Result<()> {
+    let lua = get_lua_runtime().ok_or("Lua runtime not initialized")?;
+    let root = lua.create_table()?;
+
+    // config
+    let config_tbl = lua.create_table()?;
+    config_tbl.set("namespace", ctx.config.namespace.clone())?;
+    config_tbl.set("email", ctx.config.email.clone())?;
+    config_tbl.set("token", ctx.config.token.clone())?;
+    config_tbl.set("auth_mode", ctx.config.auth_mode.clone())?;
+    config_tbl.set("account_id", ctx.config.account_id.clone())?;
+    config_tbl.set("board_id", ctx.config.board_id.clone())?;
+    config_tbl.set("jira_version", ctx.config.jira_version.clone())?;
+    config_tbl.set("alias", ctx.config.alias.clone())?;
+    config_tbl.set("transitions", ctx.config.transitions.clone())?;
+    root.set("config", config_tbl)?;
+
+    // sprint
+
+    if let Some(sprint) = &ctx.sprint {
+        let sprint_tbl = lua.create_table()?;
+        sprint_tbl.set("name", sprint.name.clone())?;
+        sprint_tbl.set("goal", sprint.goal.clone())?;
+        sprint_tbl.set("end_date", sprint.end_date.clone())?;
+        sprint_tbl.set("board_id", sprint.board_id.clone())?;
+        let pbis_tbl = lua.create_table()?;
+        for (i, pbi) in sprint.pbis.iter().enumerate() {
+            pbis_tbl.set(i + 1, pbi_to_lua(lua, pbi)?)?;
+        }
+        sprint_tbl.set("pbis", pbis_tbl)?;
+        root.set("sprint", sprint_tbl)?;
+    }
+
+    if let Some(selected_pbi) = &ctx.selected_pbi {
+        root.set("selected_pbi", pbi_to_lua(lua, selected_pbi)?)?;
+    }
+
+    lua.globals().set("jira_context", root)?;
+    Ok(())
+}
+
+fn pbi_to_lua(lua: &Lua, pbi: &Pbi) -> Result<Table> {
+    let table = lua.create_table()?;
+    table.set("key", pbi.key.clone())?;
+    table.set("summary", pbi.summary.clone())?;
+    table.set("status", pbi.status.clone())?;
+    table.set("assignee", pbi.assignee.clone())?;
+    table.set("issue_type", pbi.issue_type.clone())?;
+    table.set("description", pbi.description.clone())?;
+    table.set("priority", pbi.priority.clone())?;
+    table.set("story_points", pbi.story_points)?;
+    table.set("labels", pbi.labels.clone())?;
+    table.set("in_progress_at", pbi.in_progress_at.clone())?;
+    table.set("resolved_at", pbi.resolved_at.clone())?;
+    table.set("elapsed_minutes", pbi.elapsed_minutes())?;
+    Ok(table)
 }

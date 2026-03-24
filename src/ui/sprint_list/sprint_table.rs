@@ -2,7 +2,7 @@ use crate::config::keymaps::Scope;
 use crate::config::JiraConfig;
 use crate::jira::pbi::Pbi;
 use crate::jira::sprint::{sort_by_status, Sprint, SprintService};
-use crate::lua::init::JiraCommand;
+use crate::lua::init::{create_context, inject_context, JiraCommand};
 use crate::plugins::lua_plugin::{execute_plugins, JiraContext};
 use crate::ui::shared::pbi_table::{ColumnConfig, PbiTable, TableAction};
 use crossterm::event::KeyCode;
@@ -212,8 +212,13 @@ impl SprintTable {
 
     /// Process a key press and return any [`TableAction`]s for `SprintApp`.
     pub fn handle_key(&mut self, key: KeyCode) -> Vec<TableAction> {
-        let scopes = [Scope::Sprint, Scope::Global, Scope::Pbi];
-        self.table.handle_lua_keymap(key, &scopes)
+        inject_context(&create_context(
+            Some(self.sprint.clone()),
+            self.selected().cloned(),
+        ))
+        .expect("Failed to inject context");
+        self.table
+            .handle_lua_keymap(key, &[Scope::Sprint, Scope::Global, Scope::Pbi])
     }
 
     // ── Rendering ─────────────────────────────────────────────────────────────

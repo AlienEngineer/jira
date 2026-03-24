@@ -1,6 +1,6 @@
 use crate::config::keymaps::Scope;
 use crate::jira::pbi::{pbi_elapsed_display, Pbi};
-use crate::lua::init::get_keymap_collection;
+use crate::lua::init::{create_context, get_keymap_collection, inject_context};
 use crate::ui::keycode_mapper::keycode_to_string;
 use crate::ui::shared::footer::Footer;
 use crossterm::event::KeyCode;
@@ -41,6 +41,8 @@ impl PbiDetailView {
     // ── Key handling ──────────────────────────────────────────────────────────
 
     pub fn handle_key(&mut self, key: KeyCode) {
+        inject_context(&create_context(None, Some(self.pbi.clone())))
+            .expect("Failed to inject context");
         self.handle_lua_keymaps(key);
     }
 

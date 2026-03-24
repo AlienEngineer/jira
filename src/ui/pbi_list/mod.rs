@@ -5,7 +5,7 @@ use filter_editor::{FilterEditor, FilterEditorAction};
 use crate::config::keymaps::Scope;
 use crate::jira::lists::{ListFilter, ListService};
 use crate::jira::pbi::Pbi;
-use crate::lua::init::{take_command_receiver, JiraCommand};
+use crate::lua::init::{create_context, inject_context, take_command_receiver, JiraCommand};
 use crate::prelude::Result;
 use crate::ui::pbi_detail::PbiDetailView;
 use crate::ui::shared::editor::{open_pbi_in_browser, open_raw_in_editor};
@@ -277,6 +277,8 @@ impl PbiListApp {
     }
 
     fn handle_list_key(&mut self, key: crossterm::event::KeyCode) {
+        inject_context(&create_context(None, self.selected_pbi.clone()))
+            .expect("Failed to inject context");
         let scopes = [Scope::PbiList, Scope::Global, Scope::Pbi];
         let actions = self.table.handle_lua_keymap(key, &scopes);
         for action in actions {
