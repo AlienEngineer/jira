@@ -271,10 +271,13 @@ pub fn update_config_object(key: String, value: json::JsonValue) {
 
 /// Parse the config file to json object.
 pub fn parse_config() -> json::JsonValue {
-    let mut file = fs::File::open(get_config_file_name()).unwrap();
-    let mut contents = String::new();
-    file.read_to_string(&mut contents).unwrap();
-    json::parse(&contents).unwrap()
+    if let Ok(mut file) = fs::File::open(get_config_file_name()) {
+        let mut contents = String::new();
+        file.read_to_string(&mut contents).unwrap();
+        json::parse(&contents).unwrap()
+    } else {
+        json::object! {}
+    }
 }
 
 pub fn get_board_id() -> String {
