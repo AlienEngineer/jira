@@ -55,10 +55,7 @@ fn init_ioc_container() {
         jira::utils::DefaultMetadataService::new(get_instance!(jira::api::JiraApi))
     });
     register_service!(ioc, jira::assign::AssignService, {
-        jira::assign::DefaultAssignService::new(
-            get_instance!(jira::api::JiraApi),
-            get_instance!(jira::utils::MetadataService),
-        )
+        jira::assign::DefaultAssignService::new(get_instance!(jira::api::JiraApi))
     });
     register_service!(ioc, jira::fields::FieldsService, {
         jira::fields::DefaultFieldsService::new(get_instance!(jira::api::JiraApi))

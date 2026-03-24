@@ -1,7 +1,9 @@
 use crate::config::keymaps::Scope;
 use crate::config::JiraConfig;
+use crate::jira::assign::AssignService;
 use crate::jira::pbi::Pbi;
 use crate::jira::sprint::{sort_by_status, Sprint, SprintService};
+use crate::jira::transitions::TransitionService;
 use crate::lua::init::{create_context, inject_context, JiraCommand};
 use crate::plugins::lua_plugin::{execute_plugins, JiraContext};
 use crate::ui::shared::pbi_table::{ColumnConfig, PbiTable, TableAction};
@@ -10,6 +12,14 @@ use ratatui::{layout::Rect, Frame};
 use std::sync::{mpsc, Arc};
 use std::thread;
 
+fn service<T>() -> Arc<T>
+where
+    T: ?Sized + crate::ioc::interface::Interface + 'static,
+{
+    crate::ioc::global()
+        .get::<T>()
+        .expect("service not registered in IoC container")
+}
 // ── Internal channel message ─────────────────────────────────────────────────
 
 enum LoadMsg {
@@ -96,6 +106,26 @@ impl SprintTable {
             }
             JiraCommand::Print(msg) => {
                 actions.push(TableAction::SetStatus(msg.clone()));
+            }
+            JiraCommand::AssignPbi(pbi_id, account_id) => {
+                let result = service::<dyn AssignService>()
+                    .assign_ticket_to_account(pbi_id.clone(), account_id.clone());
+
+                if result.is_err() {
+                    actions.push(TableAction::SetStatus(format!(
+                        "Error assigning {pbi_id} to {account_id}"
+                    )));
+                }
+            }
+            JiraCommand::ChangePbiStatus(pbi_id, status) => {
+                let result = service::<dyn TransitionService>()
+                    .change_pbi_status(pbi_id.clone(), status.clone());
+
+                if result.is_err() {
+                    actions.push(TableAction::SetStatus(format!(
+                        "Error changing {pbi_id} status to {status}"
+                    )));
+                }
             }
             _ => {}
         }

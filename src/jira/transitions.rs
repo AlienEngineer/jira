@@ -1,11 +1,12 @@
-use std::sync::Arc;
-
 use crate::config;
 use crate::ioc::interface::Interface;
 use crate::jira::api::JiraApi;
+use crate::prelude::Result;
+use std::sync::Arc;
 
 pub trait TransitionService: Interface {
     fn print_transition_lists(&self, ticket: String);
+    fn change_pbi_status(&self, pbi_id: String, status: String) -> Result<()>;
     fn move_ticket_status(&self, ticket: String, status: String, silent: bool);
 }
 
@@ -100,5 +101,23 @@ impl TransitionService for DefaultTransitionService {
         if !silent {
             println!("Successfully Completed {response}");
         }
+    }
+
+    fn change_pbi_status(&self, pbi_id: String, status: String) -> Result<()> {
+        let transition_code = self
+            .get_transition_code(&pbi_id, &status)
+            .ok_or("Invalid Status")?;
+
+        self.jira_api
+            .post(
+                &format!("issue/{pbi_id}/transitions"),
+                json::object! {
+                    "transition": {
+                        "id": transition_code
+                    }
+                },
+                config::get_version().parse::<u8>().unwrap_or(3),
+            )
+            .map(|_| ())
     }
 }

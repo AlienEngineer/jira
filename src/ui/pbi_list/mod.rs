@@ -157,6 +157,9 @@ impl PbiListApp {
                 let editor = FilterEditor::new(self.filter.clone());
                 self.active_view = ActiveView::FilterEditor(Box::new(editor));
             }
+            JiraCommand::Print(msg) => {
+                self.footer.set_status(msg);
+            }
             _ => {}
         }
     }

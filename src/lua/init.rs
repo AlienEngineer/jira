@@ -163,7 +163,8 @@ pub enum JiraCommand {
     OpenFilter,
     EditPluginSelected,
     Back,
-    AssignToMe,
+    AssignPbi(String, String),
+    ChangePbiStatus(String, String),
     Print(String),
 }
 
@@ -280,12 +281,25 @@ pub fn init_lua_config() -> Result<()> {
         "edit_selected_plugin",
     )?;
     add_lua_function(&lua, &cmd, JiraCommand::Back, "back")?;
-    add_lua_function(&lua, &cmd, JiraCommand::AssignToMe, "assign_to_me")?;
 
     cmd.set(
         "print",
         lua.create_function(|_, msg: String| {
             send_command(JiraCommand::Print(msg));
+            Ok(())
+        })?,
+    )?;
+    cmd.set(
+        "assing_pbi",
+        lua.create_function(|_, (pbi_id, account_id): (String, String)| {
+            send_command(JiraCommand::AssignPbi(pbi_id, account_id));
+            Ok(())
+        })?,
+    )?;
+    cmd.set(
+        "change_pbi_status",
+        lua.create_function(|_, (pbi_id, account_id): (String, String)| {
+            send_command(JiraCommand::ChangePbiStatus(pbi_id, account_id));
             Ok(())
         })?,
     )?;
