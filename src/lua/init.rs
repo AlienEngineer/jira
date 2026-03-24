@@ -23,6 +23,37 @@ const DEFAULT_INIT_LUA: &str = r#"
 -- jira.cmd.open_in_browser - open the currently selected pbi in the browser
 -- jira.cmd.open_filter - open the filter menu to filter the list of pbi's
 --
+-- Full context reference (all fields available as jira_context.*):
+--
+-- CONFIG
+--   jira_context.config.namespace      -- e.g. "mycompany.atlassian.net"
+--   jira_context.config.email          -- authenticated user's email
+--   jira_context.config.token          -- API token (handle with care)
+--   jira_context.config.auth_mode      -- "Basic" or "Bearer"
+--   jira_context.config.account_id     -- Jira account ID of the current user
+--   jira_context.config.board_id       -- active board ID (string or nil)
+--   jira_context.config.jira_version   -- "cloud" or "server" (or nil)
+--   jira_context.config.alias          -- table: short name → full status name
+--   jira_context.config.transitions    -- table: project → (name → id)
+--
+-- SPRINT
+--   jira_context.sprint.name           -- sprint name
+--   jira_context.sprint.goal           -- sprint goal text
+--   jira_context.sprint.end_date       -- ISO-8601 end date string
+--   jira_context.sprint.board_id       -- board ID this sprint belongs to
+--   jira_context.sprint.pbis           -- array of all PBI tables (see below)
+--
+-- SELECTED PBI  (nil when none is selected)
+--   jira_context.selected_pbi.key          -- e.g. "PROJ-123"
+--   jira_context.selected_pbi.summary      -- issue title
+--   jira_context.selected_pbi.status       -- e.g. "In Progress"
+--   jira_context.selected_pbi.assignee     -- assignee display name
+--   jira_context.selected_pbi.issue_type   -- e.g. "Story", "Bug"
+--   jira_context.selected_pbi.description  -- full description (may be nil)
+--   jira_context.selected_pbi.priority     -- e.g. "High" (may be nil)
+--   jira_context.selected_pbi.story_points -- number (may be nil)
+--   jira_context.selected_pbi.labels       -- array of label strings
+--
 -- GLOBAL
 jira.keymaps.set("j", jira.cmd.go_down)
 jira.keymaps.set("k", jira.cmd.go_up)
@@ -53,10 +84,56 @@ jira.keymaps.set("J", go_down_5)
 
 jira.keymaps.set("q", jira.cmd.quit, "Quit")
 jira.keymaps.set("<ESC>", jira.cmd.quit)
-
 jira.keymaps.set("F", jira.cmd.refresh_all, "Refresh all", "Sprint")
-jira.keymaps.set("p", jira.cmd.open_plugin_list, "Plugins", "Sprint")
-jira.keymaps.set("e", jira.cmd.edit_selected_plugin, "Edit", "Plugin")
+
+function jira_print(msg)
+	jira.cmd.print(msg)
+end
+
+function assign_to_me(pbi)
+	local account_id = jira_context.config.account_id
+	if account_id == "" then
+		jira_print("error: account-id not set in config")
+		return
+	end
+
+	-- -s for silent mode
+	local cmd = string.format("jira assign -u %s -t %s -s", account_id, pbi.key)
+	local ok = os.execute(cmd)
+
+	if ok ~= 0 then
+		jira_print("error: failed to assign " .. pbi.key)
+		return
+	end
+
+	jira_print("assigned " .. pbi.key .. " to current user")
+end
+
+function change_pbi_status(pbi, status)
+	-- -s for silent mode
+	local cmd = string.format("jira transition '%s' -t %s -s", status, pbi.key)
+	local ok = os.execute(cmd)
+
+	if ok ~= 0 then
+		jira_print("error: failed to transition " .. pbi.key .. " to '" .. status .. "'")
+	end
+
+	jira_print("transitioned " .. pbi.key .. " to '" .. status .. "'")
+end
+
+-- Enter to start work (runs plugins)
+function start_work()
+	local pbi = jira_context.selected_pbi
+	if not pbi then
+		jira_print("error: no PBI selected")
+		return
+	end
+
+	assign_to_me(pbi)
+	local status = jira_context.config.alias["ip"] or "In Progress"
+	change_pbi_status(pbi, status)
+end
+jira.keymaps.set("<CR>", start_work, "Start", "Sprint")
 
 -- PBI LIST
 jira.keymaps.set("/", jira.cmd.open_filter, "Filter", "PbiList")
@@ -66,7 +143,6 @@ jira.keymaps.set("F", jira.cmd.refresh_all, "Refresh all", "PbiList")
 jira.keymaps.set("r", jira.cmd.open_raw_pbi_json, "Raw Json", "Pbi")
 jira.keymaps.set("f", jira.cmd.refresh, "Refresh line", "Pbi")
 jira.keymaps.set("o", jira.cmd.open_in_browser, "Browser", "Pbi")
-jira.keymaps.set("<CR>", jira.cmd.start_work, "Start", "Pbi")
 "#;
 
 /// Commands that can be triggered from Lua and executed by SprintApp
