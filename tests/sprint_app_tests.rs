@@ -26,10 +26,6 @@ use jira::jira::api::JiraApi;
 use jira::jira::pbi::Pbi;
 use jira::jira::sprint::{Sprint, SprintService};
 use jira::ui::sprint_list::SprintApp;
-use ratatui::backend::TestBackend;
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
-use ratatui::Terminal;
 use std::error::Error;
 use std::sync::{Arc, Mutex, Once};
 
