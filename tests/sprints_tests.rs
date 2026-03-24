@@ -3,7 +3,6 @@ use jira::jira::sprint::{DefaultSprintService, SprintService};
 use std::sync::Arc;
 
 mod tests {
-    use jira::jira::pbi::{fetch_pbi_details, Pbi};
 
     use super::*;
 
