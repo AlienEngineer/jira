@@ -98,7 +98,12 @@ impl UpdateService for DefaultUpdateService {
         let payload = json::object! {
             "fields": update_json
         };
-        let update_response = self.jira_api.put(&format!("issue/{ticket}"), payload, 3);
+        let update_response = self.jira_api.put(
+            &format!("issue/{ticket}"),
+            payload,
+            config::get_version().parse::<u8>().unwrap_or(3),
+        );
+
         if update_response.is_err() {
             eprintln!("Error occurred while updating the ticket");
             std::process::exit(1);

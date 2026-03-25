@@ -38,7 +38,7 @@ impl AssignService for DefaultAssignService {
             .put(
                 &format!("issue/{ticket_id}/assignee"),
                 json::object! {
-                    "accountId": account_id
+                    "name": account_id
                 },
                 config::get_version().parse::<u8>().unwrap_or(3),
             )
