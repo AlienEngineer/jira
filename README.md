@@ -13,6 +13,9 @@ This application can be used for personal usage to manage Jira from the terminal
 ```bash
 brew tap alienengineer/jira
 brew install jira
+
+# get default configurations
+git clone https://github.com/AlienEngineer/jira-plugins ~/.config/jira
 ```
 
 ### Jira TUI
