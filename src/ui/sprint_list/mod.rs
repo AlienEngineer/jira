@@ -347,11 +347,6 @@ impl SprintApp {
     pub fn sprint_end_date(&self) -> &str {
         &self.table.sprint.end_date
     }
-
-    /// Render the app to a frame. Used for testing.
-    pub fn render(&mut self, frame: &mut Frame) {
-        self.draw(frame);
-    }
 }
 
 // ── Free functions ────────────────────────────────────────────────────────────

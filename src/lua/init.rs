@@ -97,13 +97,26 @@ function assign_to_me(pbi)
 		return
 	end
 
-	jira.cmd.assign_pbi(pbi.key, account_id)
+	-- -s for silent mode
+	local cmd = string.format("jira assign -u %s -t %s -s", account_id, pbi.key)
+	local ok = os.execute(cmd)
+
+	if ok ~= 0 then
+		jira_print("error: failed to assign " .. pbi.key)
+		return
+	end
 
 	jira_print("assigned " .. pbi.key .. " to current user")
 end
 
 function change_pbi_status(pbi, status)
-	jira.cmd.change_pbi_status(pbi.key, status)
+	-- -s for silent mode
+	local cmd = string.format("jira transition '%s' -t %s -s", status, pbi.key)
+	local ok = os.execute(cmd)
+
+	if ok ~= 0 then
+		jira_print("error: failed to transition " .. pbi.key .. " to '" .. status .. "'")
+	end
 
 	jira_print("transitioned " .. pbi.key .. " to '" .. status .. "'")
 end
@@ -153,6 +166,7 @@ pub enum JiraCommand {
     AssignPbi(String, String),
     ChangePbiStatus(String, String),
     Print(String),
+    Confirmation(String),
 }
 
 static KEYMAP_COLLECTION: OnceLock<Arc<Mutex<KeyMapCollection>>> = OnceLock::new();

@@ -1,10 +1,6 @@
-use ratatui::{
-    layout::Rect,
-    style::{Color, Modifier, Style},
-    text::{Line, Span},
-    widgets::{Block, Paragraph, Wrap},
-    Frame,
-};
+use ratatui::{layout::Rect, Frame};
+
+use crate::ui::components::{Component, UiComponent};
 
 /// Renders the sprint title bar and optional sprint-goal block.
 ///
@@ -35,15 +31,7 @@ impl SprintGoalWidget {
     /// Render the single-line title bar (sprint name).
     pub fn render_title(&self, frame: &mut Frame, area: Rect) {
         frame.render_widget(
-            Line::from(vec![
-                Span::raw(" Sprint: "),
-                Span::styled(
-                    self.sprint_name.clone(),
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
-                ),
-            ]),
+            UiComponent::labeled_text(" Sprint: ", self.sprint_name.as_str()),
             area,
         );
     }
@@ -54,19 +42,7 @@ impl SprintGoalWidget {
             return;
         }
         frame.render_widget(
-            Paragraph::new(self.sprint_goal.as_str())
-                .style(Style::default().fg(Color::White).italic())
-                .block(
-                    Block::bordered()
-                        .title(Span::styled(
-                            " Goal ",
-                            Style::default()
-                                .fg(Color::Yellow)
-                                .add_modifier(Modifier::BOLD),
-                        ))
-                        .border_style(Style::default().fg(Color::Yellow)),
-                )
-                .wrap(Wrap { trim: true }),
+            UiComponent::blocked_title(" Goal ", self.sprint_goal.as_str()),
             area,
         );
     }

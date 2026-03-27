@@ -1,0 +1,19 @@
+@startuml
+
+class UiWidget {
+    render(frame: Frame, area: Rect);
+    getConstraint(): Constraint;
+}
+
+class UiTitle : UiWidget {
+    label: String;
+    description: String;
+}
+
+class UiLayout {
+    widgets: UiWidget[];
+    render(frame: Frame, area: Rect);
+
+}
+
+@enduml
