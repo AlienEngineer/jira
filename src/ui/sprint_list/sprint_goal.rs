@@ -1,8 +1,6 @@
 use ratatui::{layout::Rect, Frame};
 
-use crate::ui::components::{
-    ui_boxed_title::UiBoxedTitle, ui_title::UiTitle, ui_widget::UiWidget,
-};
+use crate::ui::components::{ui_boxed_title::UiBoxedTitle, ui_title::UiTitle, ui_widget::UiWidget};
 
 /// Renders the sprint title bar and optional sprint-goal block.
 ///
