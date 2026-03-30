@@ -1,6 +1,8 @@
 use ratatui::{layout::Rect, Frame};
 
-use crate::ui::components::{Component, UiComponent};
+use crate::ui::components::{
+    ui_boxed_title::UiBoxedTitle, ui_title::UiTitle, ui_widget::UiWidget,
+};
 
 /// Renders the sprint title bar and optional sprint-goal block.
 ///
@@ -30,10 +32,7 @@ impl SprintGoalWidget {
 
     /// Render the single-line title bar (sprint name).
     pub fn render_title(&self, frame: &mut Frame, area: Rect) {
-        frame.render_widget(
-            UiComponent::labeled_text(" Sprint: ", self.sprint_name.as_str()),
-            area,
-        );
+        UiTitle::new(" Sprint: ", self.sprint_name.as_str()).render_widget(frame, area);
     }
 
     /// Render the bordered goal block. Does nothing when no goal is set.
@@ -41,9 +40,6 @@ impl SprintGoalWidget {
         if self.sprint_goal.is_empty() {
             return;
         }
-        frame.render_widget(
-            UiComponent::blocked_title(" Goal ", self.sprint_goal.as_str()),
-            area,
-        );
+        UiBoxedTitle::new(" Goal ", self.sprint_goal.as_str()).render_widget(frame, area);
     }
 }

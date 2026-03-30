@@ -4,6 +4,7 @@ use ratatui::{
     style::{Color, Modifier, Style},
     text::Span,
     widgets::{Block, Paragraph, Widget, Wrap},
+    Frame,
 };
 
 use crate::ui::components::ui_widget::UiWidget;
@@ -23,7 +24,7 @@ impl UiBoxedTitle {
 }
 
 impl UiWidget for UiBoxedTitle {
-    fn render(&self, area: Rect, buf: &mut Buffer) {
+    fn render(&mut self, area: Rect, buf: &mut Buffer) {
         Paragraph::new(self.content.as_str())
             .style(Style::default().fg(Color::White).italic())
             .block(
@@ -47,6 +48,10 @@ impl UiWidget for UiBoxedTitle {
     fn skip(&self) -> bool {
         self.content.is_empty()
     }
+
+    fn render_widget(&mut self, frame: &mut Frame, area: Rect) {
+        self.render(area, frame.buffer_mut());
+    }
 }
 
 #[cfg(test)]
@@ -60,22 +65,12 @@ mod test {
 
     use crate::ui::components::{ui_boxed_title::UiBoxedTitle, ui_widget::UiWidget};
 
-    #[derive(Debug, Default)]
-    pub struct App {}
-
-    impl App {
-        fn render(&self, area: Rect, buf: &mut Buffer) {
-            UiBoxedTitle::new("My Boxed Title", "This is the content of the boxed title.")
-                .render(area, buf);
-        }
-    }
-
     #[test]
     fn rendering_title_renders_label_and_description() {
-        let app = App::default();
         let mut buf = Buffer::empty(Rect::new(0, 0, 50, 3));
 
-        app.render(buf.area, &mut buf);
+        UiBoxedTitle::new("My Boxed Title", "This is the content of the boxed title.")
+            .render(buf.area, &mut buf);
 
         let mut expected = Buffer::with_lines(vec![
             "┌My Boxed Title──────────────────────────────────┐",

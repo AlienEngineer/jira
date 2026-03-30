@@ -4,6 +4,7 @@ use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Paragraph, Widget},
+    Frame,
 };
 
 use crate::ui::components::ui_widget::UiWidget;
@@ -58,7 +59,7 @@ impl UiSprintProgress {
 }
 
 impl UiWidget for UiSprintProgress {
-    fn render(&self, area: Rect, buf: &mut Buffer) {
+    fn render(&mut self, area: Rect, buf: &mut Buffer) {
         let bar_color = self.get_color();
         Paragraph::new(Line::from(vec![
             Span::styled(self.get_bars(), Style::default().fg(bar_color)),
@@ -93,6 +94,10 @@ impl UiWidget for UiSprintProgress {
     fn skip(&self) -> bool {
         false
     }
+
+    fn render_widget(&mut self, frame: &mut Frame, area: Rect) {
+        self.render(area, frame.buffer_mut());
+    }
 }
 
 #[cfg(test)]
@@ -106,34 +111,12 @@ mod test {
 
     use crate::ui::components::{ui_sprint_progress::UiSprintProgress, ui_widget::UiWidget};
 
-    #[derive(Debug, Default)]
-    pub struct App {
-        total: usize,
-        resolved: usize,
-    }
-
-    impl App {
-        fn render(&self, area: Rect, buf: &mut Buffer) {
-            UiSprintProgress::new(
-                "This is my label",
-                " Sprint Progress ",
-                self.total,
-                self.resolved,
-            )
-            .render(area, buf);
-        }
-
-        fn new(total: usize, resolved: usize) -> Self {
-            Self { total, resolved }
-        }
-    }
-
     #[test]
-    fn rendering_sprint_progress_renders_label_and_description() {
-        let app = App::new(10, 1);
+    fn rendering_sprint_progress_with_low_progress_renders_it_with_red_bar() {
         let mut buf = Buffer::empty(Rect::new(0, 0, 80, 3));
 
-        app.render(buf.area, &mut buf);
+        UiSprintProgress::new("This is my label", " Sprint Progress ", 10, 1)
+            .render(buf.area, &mut buf);
 
         let mut expected = Buffer::with_lines(vec![
             "┌ Sprint Progress ─────────────────────────────────────────────────────────────┐",
@@ -142,41 +125,85 @@ mod test {
         ]);
 
         // Row 0: border (full row), then title overlay
-        expected.set_style(Rect::new(0, 0, 80, 1), get_border_style());
+        expected.set_style(Rect::new(0, 0, 80, 1), Style::default().fg(Color::DarkGray));
         expected.set_style(Rect::new(1, 0, 17, 1), get_title_style());
 
         // Row 1: left border, bar, stats, label, padding, right border
-        expected.set_style(Rect::new(0, 1, 1, 1), get_border_style());
-        expected.set_style(Rect::new(1, 1, 12, 1), get_bar_style());
-        expected.set_style(Rect::new(13, 1, 21, 1), get_stats_style());
-        expected.set_style(Rect::new(34, 1, 16, 1), get_label_style());
-        expected.set_style(Rect::new(79, 1, 1, 1), get_border_style());
+        expected.set_style(Rect::new(0, 1, 1, 1), Style::default().fg(Color::DarkGray));
+        expected.set_style(Rect::new(1, 1, 12, 1), Style::default().fg(Color::Red));
+        expected.set_style(Rect::new(13, 1, 21, 1), Style::default().fg(Color::White));
+        expected.set_style(Rect::new(34, 1, 16, 1), Style::default().fg(Color::Cyan));
+        expected.set_style(Rect::new(79, 1, 1, 1), Style::default().fg(Color::DarkGray));
 
         // Row 2: border (full row)
-        expected.set_style(Rect::new(0, 2, 80, 1), get_border_style());
+        expected.set_style(Rect::new(0, 2, 80, 1), Style::default().fg(Color::DarkGray));
 
         assert_eq!(buf, expected);
     }
 
-    fn get_border_style() -> Style {
-        Style::default().fg(Color::DarkGray)
+    #[test]
+    fn rendering_sprint_progress_at_50_percent_renders_it_with_yellow_bar() {
+        let mut buf = Buffer::empty(Rect::new(0, 0, 80, 3));
+
+        UiSprintProgress::new("This is my label", " Sprint Progress ", 10, 5)
+            .render(buf.area, &mut buf);
+
+        let mut expected = Buffer::with_lines(vec![
+            "┌ Sprint Progress ─────────────────────────────────────────────────────────────┐",
+            "│[█████░░░░░] 50% (5/10 resolved) This is my label                             │",
+            "└──────────────────────────────────────────────────────────────────────────────┘",
+        ]);
+
+        // Row 0: border (full row), then title overlay
+        expected.set_style(Rect::new(0, 0, 80, 1), Style::default().fg(Color::DarkGray));
+        expected.set_style(Rect::new(1, 0, 17, 1), get_title_style());
+
+        // Row 1: left border, bar, stats, label, padding, right border
+        expected.set_style(Rect::new(0, 1, 1, 1), Style::default().fg(Color::DarkGray));
+        expected.set_style(Rect::new(1, 1, 12, 1), Style::default().fg(Color::Yellow));
+        expected.set_style(Rect::new(13, 1, 21, 1), Style::default().fg(Color::White));
+        expected.set_style(Rect::new(34, 1, 16, 1), Style::default().fg(Color::Cyan));
+        expected.set_style(Rect::new(79, 1, 1, 1), Style::default().fg(Color::DarkGray));
+
+        // Row 2: border (full row)
+        expected.set_style(Rect::new(0, 2, 80, 1), Style::default().fg(Color::DarkGray));
+
+        assert_eq!(buf, expected);
+    }
+
+    #[test]
+    fn rendering_sprint_progress_at_100_percent_renders_it_with_green_bar() {
+        let mut buf = Buffer::empty(Rect::new(0, 0, 80, 3));
+
+        UiSprintProgress::new("This is my label", " Sprint Progress ", 10, 10)
+            .render(buf.area, &mut buf);
+
+        let mut expected = Buffer::with_lines(vec![
+            "┌ Sprint Progress ─────────────────────────────────────────────────────────────┐",
+            "│[██████████] 100% (10/10 resolved) This is my label                           │",
+            "└──────────────────────────────────────────────────────────────────────────────┘",
+        ]);
+
+        // Row 0: border (full row), then title overlay
+        expected.set_style(Rect::new(0, 0, 80, 1), Style::default().fg(Color::DarkGray));
+        expected.set_style(Rect::new(1, 0, 17, 1), get_title_style());
+
+        // Row 1: left border, bar, stats, label, padding, right border
+        expected.set_style(Rect::new(0, 1, 1, 1), Style::default().fg(Color::DarkGray));
+        expected.set_style(Rect::new(1, 1, 12, 1), Style::default().fg(Color::Green));
+        expected.set_style(Rect::new(13, 1, 23, 1), Style::default().fg(Color::White));
+        expected.set_style(Rect::new(36, 1, 16, 1), Style::default().fg(Color::Cyan));
+        expected.set_style(Rect::new(79, 1, 1, 1), Style::default().fg(Color::DarkGray));
+
+        // Row 2: border (full row)
+        expected.set_style(Rect::new(0, 2, 80, 1), Style::default().fg(Color::DarkGray));
+
+        assert_eq!(buf, expected);
     }
 
     fn get_title_style() -> Style {
         Style::default()
             .fg(Color::Yellow)
             .add_modifier(Modifier::BOLD)
-    }
-
-    fn get_bar_style() -> Style {
-        Style::default().fg(Color::Red)
-    }
-
-    fn get_stats_style() -> Style {
-        Style::default().fg(Color::White)
-    }
-
-    fn get_label_style() -> Style {
-        Style::default().fg(Color::Cyan)
     }
 }

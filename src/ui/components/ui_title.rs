@@ -4,6 +4,7 @@ use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::Widget,
+    Frame,
 };
 
 use crate::ui::components::ui_widget::UiWidget;
@@ -23,7 +24,7 @@ impl UiTitle {
 }
 
 impl UiWidget for UiTitle {
-    fn render(&self, area: Rect, buf: &mut Buffer) {
+    fn render(&mut self, area: Rect, buf: &mut Buffer) {
         Line::from(vec![
             Span::raw(self.label.as_str()),
             Span::styled(
@@ -43,6 +44,10 @@ impl UiWidget for UiTitle {
     fn skip(&self) -> bool {
         false
     }
+
+    fn render_widget(&mut self, frame: &mut Frame, area: Rect) {
+        self.render(area, frame.buffer_mut());
+    }
 }
 
 #[cfg(test)]
@@ -56,21 +61,11 @@ mod test {
 
     use crate::ui::components::{ui_title::UiTitle, ui_widget::UiWidget};
 
-    #[derive(Debug, Default)]
-    pub struct App {}
-
-    impl App {
-        fn render(&self, area: Rect, buf: &mut Buffer) {
-            UiTitle::new(" Sprint: ", "This is my description.").render(area, buf);
-        }
-    }
-
     #[test]
     fn rendering_title_renders_label_and_description() {
-        let app = App::default();
         let mut buf = Buffer::empty(Rect::new(0, 0, 32, 1));
 
-        app.render(buf.area, &mut buf);
+        UiTitle::new(" Sprint: ", "This is my description.").render(buf.area, &mut buf);
 
         let mut expected = Buffer::with_lines(vec![" Sprint: This is my description."]);
         expected.set_style(Rect::new(0, 0, 9, 1), Style::new());
