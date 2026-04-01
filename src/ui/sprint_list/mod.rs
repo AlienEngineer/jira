@@ -1,21 +1,20 @@
-mod progress_block;
-mod sprint_goal;
-mod sprint_table;
-
-use progress_block::{ProgressBlock, SprintProgressData};
-use sprint_goal::SprintGoalWidget;
-use sprint_table::SprintTable;
-
 use crate::config::keymaps::Scope;
+use crate::jira::assign::AssignService;
 use crate::jira::pbi::Pbi;
-use crate::jira::sprint::{self, Sprint, SprintService};
-use crate::lua::init::{take_command_receiver, JiraCommand};
+use crate::jira::sprint::{self, sort_by_status, Sprint, SprintService};
+use crate::jira::transitions::TransitionService;
+use crate::lua::init::{create_context, inject_context, take_command_receiver, JiraCommand};
 use crate::prelude::Result;
+use crate::ui::components::ui_boxed_title::UiBoxedTitle;
+use crate::ui::components::ui_footer::UiFooter;
+use crate::ui::components::ui_layout::UiLayout;
+use crate::ui::components::ui_sprint_progress::UiSprintProgress;
+use crate::ui::components::ui_title::UiTitle;
+use crate::ui::components::ui_widget::UiWidget;
 use crate::ui::pbi_detail::PbiDetailView;
 use crate::ui::plugin_list::PluginListView;
 use crate::ui::shared::editor::{open_pbi_in_browser, open_raw_in_editor};
-use crate::ui::shared::footer::Footer;
-use crate::ui::shared::pbi_table::TableAction;
+use crate::ui::shared::pbi_table::{ColumnConfig, PbiTable, TableAction};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::{DefaultTerminal, Frame};
@@ -23,8 +22,25 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::mpsc::Receiver;
-use std::sync::Arc;
+use std::sync::{mpsc, Arc};
+use std::thread;
 use std::time::Duration;
+
+fn service<T>() -> Arc<T>
+where
+    T: ?Sized + crate::ioc::interface::Interface + 'static,
+{
+    crate::ioc::global()
+        .get::<T>()
+        .expect("service not registered in IoC container")
+}
+
+// ── Background loading ────────────────────────────────────────────────────────
+
+enum LoadMsg {
+    SprintRefreshed(Sprint),
+    SprintError(String),
+}
 
 // ── Active view ───────────────────────────────────────────────────────────────
 
@@ -34,34 +50,27 @@ enum ActiveView {
     PluginList(Box<PluginListView>),
 }
 
-/// Top-level coordinator that owns all sprint UI components and drives the
-/// event loop.
-///
-/// `SprintApp` is responsible for:
-/// - Composing the terminal layout
-/// - Routing key events to `SprintTable` and dispatching the returned
-///   [`TableAction`]s to the appropriate component
-/// - Cross-cutting concerns: persisting the sprint cache (needs data from
-///   multiple components)
 pub struct SprintApp {
-    goal: SprintGoalWidget,
-    table: SprintTable,
-    progress: ProgressBlock,
-    footer: Footer,
+    table: PbiTable,
+    sprint_service: Arc<dyn SprintService>,
+    load_rx: Option<mpsc::Receiver<LoadMsg>>,
+    footer: UiFooter,
     exit: bool,
     active_view: ActiveView,
     selected_pbi: Option<Pbi>,
     pending_plugin_edit: Option<PathBuf>,
     command_rx: Option<Receiver<JiraCommand>>,
+    sprint: Sprint,
 }
 
 impl SprintApp {
     pub fn new(sprint: Sprint, sprint_service: Arc<dyn SprintService>) -> Self {
         Self {
-            goal: SprintGoalWidget::new(sprint.name.clone(), sprint.goal.clone()),
-            table: SprintTable::new(sprint, sprint_service),
-            progress: ProgressBlock::new(),
-            footer: Footer::new(vec![Scope::Sprint, Scope::Global, Scope::Pbi]),
+            table: PbiTable::new(ColumnConfig::sprint_view()),
+            sprint_service,
+            load_rx: None,
+            sprint,
+            footer: UiFooter::new(vec![Scope::Sprint, Scope::Global, Scope::Pbi]),
             exit: false,
             active_view: ActiveView::Sprint,
             pending_plugin_edit: None,
@@ -71,6 +80,7 @@ impl SprintApp {
     }
 
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
+        self.table.load(self.sprint.pbis.clone());
         while !self.exit {
             self.process_background_messages();
             self.process_lua_commands();
@@ -96,9 +106,7 @@ impl SprintApp {
         Ok(())
     }
 
-    /// Process any commands received from Lua keybindings
     fn process_lua_commands(&mut self) {
-        // Collect commands first to avoid borrow conflicts
         let commands: Vec<JiraCommand> = {
             let Some(rx) = &self.command_rx else { return };
             rx.try_iter().collect()
@@ -128,7 +136,7 @@ impl SprintApp {
                         Err(msg) => self.footer.set_status(msg),
                     },
                     JiraCommand::Refresh => {
-                        let api = self.table.jira_api();
+                        let api = self.sprint_service.jira_api();
                         if let Err(e) = crate::jira::pbi::fetch_pbi_details(api, &mut detail.pbi) {
                             self.footer.set_status(format!("Error: {e}"));
                         } else {
@@ -159,7 +167,44 @@ impl SprintApp {
     }
 
     fn process_sprint_command(&mut self, cmd: JiraCommand) {
-        let actions = self.table.handle_command(&cmd);
+        let mut actions = self.table.handle_command(&cmd, &self.sprint.pbis);
+
+        match &cmd {
+            JiraCommand::RefreshAll => {
+                self.start_load_all();
+                actions.push(TableAction::SetStatus(
+                    "Refreshing sprint from Jira…".into(),
+                ));
+            }
+            JiraCommand::OpenPluginList => {
+                actions.push(TableAction::OpenPlugins);
+            }
+            JiraCommand::Print(msg) => {
+                actions.push(TableAction::SetStatus(msg.clone()));
+            }
+            JiraCommand::AssignPbi(pbi_id, account_id) => {
+                let result = service::<dyn AssignService>()
+                    .assign_ticket_to_account(pbi_id.clone(), account_id.clone());
+
+                if result.is_err() {
+                    actions.push(TableAction::SetStatus(format!(
+                        "Error assigning {pbi_id} to {account_id}"
+                    )));
+                }
+            }
+            JiraCommand::ChangePbiStatus(pbi_id, status) => {
+                let result = service::<dyn TransitionService>()
+                    .change_pbi_status(pbi_id.clone(), status.clone());
+
+                if result.is_err() {
+                    actions.push(TableAction::SetStatus(format!(
+                        "Error changing {pbi_id} status to {status}"
+                    )));
+                }
+            }
+            _ => {}
+        }
+
         for action in actions {
             self.dispatch(action);
         }
@@ -168,26 +213,62 @@ impl SprintApp {
     // ── Background messages ───────────────────────────────────────────────────
 
     fn process_background_messages(&mut self) {
-        if let Some(update) = self.table.process_messages() {
-            if let (Some(name), Some(goal)) = (update.sprint_name, update.sprint_goal) {
-                self.goal.sprint_name = name;
-                self.goal.sprint_goal = goal;
+        let msg = {
+            let Some(rx) = self.load_rx.as_ref() else {
+                return;
+            };
+            match rx.try_recv() {
+                Ok(msg) => msg,
+                Err(_) => return,
             }
-            self.footer.set_status(update.status);
-            self.save_cache();
+        };
+
+        self.load_rx = None;
+
+        match msg {
+            LoadMsg::SprintRefreshed(sprint) => {
+                let count = sprint.pbis.len();
+                self.sprint = sprint;
+                self.footer
+                    .set_status(format!("Refreshed — {count} issues loaded"));
+                self.table.load(self.sprint.pbis.clone());
+                self.save_cache();
+            }
+            LoadMsg::SprintError(e) => {
+                self.footer
+                    .set_status(format!("Error refreshing sprint: {e}"));
+            }
         }
     }
 
     // ── Cache persistence ─────────────────────────────────────────────────────
 
     fn save_cache(&self) {
-        sprint::save_sprint_cache(&Sprint {
-            name: self.goal.sprint_name.to_string(),
-            goal: self.goal.sprint_goal.to_string(),
-            end_date: self.table.sprint.end_date.clone(),
-            pbis: self.table.pbis().to_vec(),
-            board_id: self.table.sprint.board_id.clone(),
-        });
+        sprint::save_sprint_cache(&self.sprint);
+    }
+
+    // ── Background sprint loading ─────────────────────────────────────────────
+
+    fn start_load_all(&mut self) {
+        if self.load_rx.is_some() {
+            return;
+        }
+
+        let board_id = self.sprint.board_id.clone();
+        let sprint_service = Arc::clone(&self.sprint_service);
+        let (tx, rx) = mpsc::channel();
+        self.load_rx = Some(rx);
+
+        thread::spawn(
+            move || match sprint_service.fetch_active_sprint_issues(&board_id) {
+                Ok(s) => {
+                    let _ = tx.send(LoadMsg::SprintRefreshed(s));
+                }
+                Err(e) => {
+                    let _ = tx.send(LoadMsg::SprintError(e.to_string()));
+                }
+            },
+        );
     }
 
     // ── Layout & rendering ────────────────────────────────────────────────────
@@ -208,29 +289,32 @@ impl SprintApp {
     }
 
     fn draw_sprint(&mut self, frame: &mut Frame, area: Rect) {
-        let goal_height = self.goal.goal_height();
+        let mut layout = UiLayout::new();
+        let goal_widget = UiBoxedTitle::new(" Goal ", self.sprint.goal.as_str());
+        let title_widget = UiTitle::new(" Sprint: ", self.sprint.name.as_str());
+        let ui_sprint_progress = UiSprintProgress::new(
+            " Sprint Progress ",
+            self.sprint.pbis.len(),
+            self.sprint
+                .pbis
+                .iter()
+                .filter(|p| {
+                    let s = p.status.to_lowercase();
+                    s.contains("closed") || s.contains("resolved")
+                })
+                .count(),
+            &self.sprint.end_date,
+        );
 
-        let layout = Layout::vertical([
-            Constraint::Length(1),           // title bar
-            Constraint::Length(goal_height), // sprint goal (collapses when empty)
-            Constraint::Min(0),              // PBI table
-            Constraint::Length(3),           // progress block
-            Constraint::Length(1),           // footer / key hints
-        ])
-        .split(area);
+        let table_widget = self.table.table.clone();
+        layout.add_widget(Box::new(title_widget));
+        layout.add_widget(Box::new(goal_widget));
+        layout.add_widget(Box::new(table_widget));
+        layout.add_widget(Box::new(ui_sprint_progress));
+        layout.add_widget(Box::new(self.footer.clone()));
 
-        self.goal.render_title(frame, layout[0]);
-        self.goal.render_goal(frame, layout[1]);
-        self.table.render(frame, layout[2]);
-
-        let progress_data =
-            SprintProgressData::from_sprint(self.table.pbis(), &self.table.sprint.end_date);
-        self.progress.render(frame, layout[3], &progress_data);
-
-        self.footer.render(frame, layout[4]);
+        layout.render_widget(frame, area);
     }
-
-    // ── Event handling ────────────────────────────────────────────────────────
 
     fn handle_events(&mut self) -> Result<()> {
         if let Event::Key(key) = event::read()? {
@@ -239,7 +323,16 @@ impl SprintApp {
                     ActiveView::PbiDetail(_) => self.handle_detail_key(key.code),
                     ActiveView::PluginList(_) => self.handle_plugin_list_key(key.code),
                     ActiveView::Sprint => {
-                        for action in self.table.handle_key(key.code) {
+                        inject_context(&create_context(
+                            Some(self.sprint.clone()),
+                            self.table.selected(&self.sprint.pbis).cloned(),
+                        ))
+                        .expect("Failed to inject context");
+                        let actions = self.table.handle_lua_keymap(
+                            key.code,
+                            &[Scope::Sprint, Scope::Global, Scope::Pbi],
+                        );
+                        for action in actions {
                             self.dispatch(action);
                         }
                     }
@@ -277,35 +370,45 @@ impl SprintApp {
                 self.active_view = ActiveView::PluginList(Box::default());
             }
             TableAction::OpenRaw(idx) => {
-                if let Some(pbi) = self.table.pbis().get(idx) {
+                if let Some(pbi) = self.sprint.pbis.get(idx) {
                     self.selected_pbi = Some(pbi.clone());
                 }
             }
             TableAction::Refresh(idx) => {
-                let actions = self.table.load_pbi(idx);
+                let api = self.sprint_service.jira_api();
+                let mut actions = self.table.load_pbi(idx, &mut self.sprint.pbis, api);
+
+                if !actions.is_empty() {
+                    if let Some(TableAction::SetStatus(msg)) = actions.first() {
+                        if msg.starts_with("Loaded") {
+                            sort_by_status(&mut self.sprint.pbis);
+                            actions.push(TableAction::SaveCache);
+                        }
+                    }
+                }
+
                 for action in actions {
                     self.dispatch(action);
                 }
             }
-            _ => {} // Other actions not used in sprint view
+            _ => {}
         }
     }
 
-    // ── Test helpers ──────────────────────────────────────────────────────────
-
-    /// Handle a key event without terminal polling.
-    ///
-    /// This method allows testing the app's key handling without a terminal:
-    /// ```ignore
-    /// app.handle_key_event(KeyCode::Char('j'));
-    /// assert_eq!(app.selected_pbi().unwrap().key, "TEST-2");
-    /// ```
     pub fn handle_key_event(&mut self, key: KeyCode) {
         match &mut self.active_view {
             ActiveView::PbiDetail(_) => self.handle_detail_key(key),
             ActiveView::PluginList(_) => self.handle_plugin_list_key(key),
             ActiveView::Sprint => {
-                for action in self.table.handle_key(key) {
+                inject_context(&create_context(
+                    Some(self.sprint.clone()),
+                    self.table.selected(&self.sprint.pbis).cloned(),
+                ))
+                .expect("Failed to inject context");
+                let actions = self
+                    .table
+                    .handle_lua_keymap(key, &[Scope::Sprint, Scope::Global, Scope::Pbi]);
+                for action in actions {
                     self.dispatch(action);
                 }
             }
@@ -315,7 +418,7 @@ impl SprintApp {
 
     /// Returns the currently selected PBI, if any.
     pub fn selected_pbi(&self) -> Option<&Pbi> {
-        self.table.selected()
+        self.table.selected(&self.sprint.pbis)
     }
 
     /// Returns true if the app should exit.
@@ -330,22 +433,12 @@ impl SprintApp {
 
     /// Returns the list of PBIs.
     pub fn pbis(&self) -> &[Pbi] {
-        self.table.pbis()
-    }
-
-    /// Returns the sprint name.
-    pub fn sprint_name(&self) -> &str {
-        &self.goal.sprint_name
-    }
-
-    /// Returns the sprint goal.
-    pub fn sprint_goal(&self) -> &str {
-        &self.goal.sprint_goal
+        &self.sprint.pbis
     }
 
     /// Returns the sprint end date.
     pub fn sprint_end_date(&self) -> &str {
-        &self.table.sprint.end_date
+        &self.sprint.end_date
     }
 }
 

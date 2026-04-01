@@ -7,6 +7,7 @@ use crate::jira::lists::{ListFilter, ListService};
 use crate::jira::pbi::Pbi;
 use crate::lua::init::{create_context, inject_context, take_command_receiver, JiraCommand};
 use crate::prelude::Result;
+use crate::ui::components::ui_widget::UiWidget;
 use crate::ui::pbi_detail::PbiDetailView;
 use crate::ui::shared::editor::{open_pbi_in_browser, open_raw_in_editor};
 use crate::ui::shared::footer::Footer;
@@ -56,7 +57,7 @@ pub struct PbiListApp {
 
 impl PbiListApp {
     pub fn new(issues: Vec<Pbi>, filter: ListFilter, list_service: Arc<dyn ListService>) -> Self {
-        let table = PbiTable::with_initial_selection(ColumnConfig::list_view(), issues.len());
+        let table = PbiTable::new(ColumnConfig::list_view());
         Self {
             table,
             issues,
@@ -194,8 +195,8 @@ impl PbiListApp {
         match msg {
             BgMsg::Loaded(issues) => {
                 let count = issues.len();
+                self.table.table.load(issues.clone());
                 self.issues = issues;
-                self.table.reset_selection(count);
                 self.footer.set_status(format!("{count} issues loaded"));
             }
             BgMsg::Error(e) => {
@@ -225,7 +226,7 @@ impl PbiListApp {
 
                 self.render_title(frame, layout[0]);
                 self.render_active_filters(frame, layout[1]);
-                self.table.render(frame, layout[2], &self.issues);
+                self.table.table.render_widget(frame, layout[2]);
                 self.footer.render(frame, layout[3]);
 
                 // Filter editor overlaid on top

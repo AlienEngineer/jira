@@ -172,32 +172,6 @@ mod sprint_metadata {
     use super::*;
 
     #[test]
-    fn sprint_has_correct_name() {
-        run_test(|| {
-            let app = create_test_app();
-
-            assert_eq!(
-                app.sprint_name(),
-                "Sprint 42",
-                "sprint should have the correct name"
-            );
-        });
-    }
-
-    #[test]
-    fn sprint_has_correct_goal() {
-        run_test(|| {
-            let app = create_test_app();
-
-            assert_eq!(
-                app.sprint_goal(),
-                "Complete user authentication",
-                "sprint should have the correct goal"
-            );
-        });
-    }
-
-    #[test]
     fn sprint_has_correct_end_date() {
         run_test(|| {
             let app = create_test_app();

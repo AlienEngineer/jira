@@ -10,15 +10,15 @@ use crate::{
     jira::pbi::{pbi_elapsed_display, Pbi},
     ui::{
         components::ui_widget::UiWidget,
-        shared::pbi_table::{status_color, ColumnConfig, PbiColumn},
+        shared::pbi_table::{ColumnConfig, PbiColumn},
     },
 };
 
+#[derive(Clone)]
 pub struct UiTable {
-    pub table_state: TableState,
+    table_state: TableState,
     column_config: ColumnConfig,
-    loading_idx: Option<usize>,
-    pub pbis: Vec<Pbi>,
+    pbis: Vec<Pbi>,
 }
 
 impl UiTable {
@@ -26,9 +26,53 @@ impl UiTable {
         Self {
             table_state: TableState::default(),
             column_config,
-            loading_idx: None,
             pbis,
         }
+    }
+
+    pub fn selected_index(&self) -> Option<usize> {
+        self.table_state.selected()
+    }
+
+    pub fn selected<'a>(&self, pbis: &'a [Pbi]) -> Option<&'a Pbi> {
+        self.table_state.selected().and_then(|i| pbis.get(i))
+    }
+
+    pub fn reset_selection(&mut self) {
+        if !self.pbis.is_empty() {
+            self.table_state.select(Some(0));
+        } else {
+            self.table_state.select(None);
+        }
+    }
+
+    pub(crate) fn load(&mut self, pbis: Vec<Pbi>) {
+        self.pbis = pbis;
+        if self.table_state.selected().is_none() {
+            self.reset_selection();
+        }
+    }
+
+    pub fn navigate_down(&mut self) {
+        let next = self.table_state.selected().map_or(0, |i| {
+            if i >= self.pbis.len().saturating_sub(1) {
+                0
+            } else {
+                i + 1
+            }
+        });
+        self.table_state.select(Some(next));
+    }
+
+    pub fn navigate_up(&mut self) {
+        let prev = self.table_state.selected().map_or(0, |i| {
+            if i == 0 {
+                self.pbis.len().saturating_sub(1)
+            } else {
+                i - 1
+            }
+        });
+        self.table_state.select(Some(prev));
     }
 
     fn build_table_widget(&self) -> Table<'static> {
@@ -42,12 +86,7 @@ impl UiTable {
         .style(Style::default().bg(Color::DarkGray))
         .height(1);
 
-        let rows: Vec<Row> = self
-            .pbis
-            .iter()
-            .enumerate()
-            .map(|(idx, pbi)| self.build_row(idx, pbi))
-            .collect();
+        let rows: Vec<Row> = self.pbis.iter().map(|pbi| self.build_row(pbi)).collect();
 
         Table::new(rows, self.column_config.constraints())
             .header(header)
@@ -64,37 +103,27 @@ impl UiTable {
             .highlight_symbol(">> ")
     }
 
-    fn build_row(&self, idx: usize, pbi: &Pbi) -> Row<'static> {
+    fn build_row(&self, pbi: &Pbi) -> Row<'static> {
         let cells: Vec<Cell> = self
             .column_config
             .columns
             .iter()
-            .map(|col| self.build_cell(*col, idx, pbi))
+            .map(|col| self.build_cell(*col, pbi))
             .collect();
         Row::new(cells)
     }
 
-    fn build_cell(&self, column: PbiColumn, idx: usize, pbi: &Pbi) -> Cell<'static> {
+    fn build_cell(&self, column: PbiColumn, pbi: &Pbi) -> Cell<'static> {
         match column {
-            PbiColumn::Indicator => {
-                if self.loading_idx == Some(idx) {
-                    Cell::from("⟳").style(
-                        Style::default()
-                            .fg(Color::Yellow)
-                            .add_modifier(Modifier::BOLD),
-                    )
-                } else if pbi.loaded {
-                    Cell::from("✓").style(Style::default().fg(Color::Green))
-                } else {
-                    Cell::from(" ")
-                }
-            }
+            PbiColumn::Indicator => Cell::from(" "),
             PbiColumn::Type => {
                 Cell::from(pbi.issue_type.clone()).style(Style::default().fg(Color::DarkGray))
             }
             PbiColumn::Key => Cell::from(pbi.key.clone()).style(Style::default().fg(Color::Cyan)),
             PbiColumn::Summary => Cell::from(pbi.summary.clone()),
-            PbiColumn::Status => Cell::from(pbi.status.clone()).style(status_color(&pbi.status)),
+            PbiColumn::Status => {
+                Cell::from(pbi.status.clone()).style(self.status_color(&pbi.status))
+            }
             PbiColumn::Assignee => Cell::from(pbi.assignee.clone()),
             PbiColumn::Age => {
                 Cell::from(pbi_elapsed_display(pbi)).style(Style::default().fg(Color::DarkGray))
@@ -103,6 +132,17 @@ impl UiTable {
                 let priority = pbi.priority.clone().unwrap_or_default();
                 Cell::from(priority)
             }
+        }
+    }
+
+    fn status_color(&self, status: &str) -> Style {
+        match status.to_lowercase().as_str() {
+            s if s.contains("done") || s.contains("closed") => Style::default().fg(Color::Green),
+            s if s.contains("progress") => Style::default().fg(Color::Blue),
+            s if s.contains("review") => Style::default().fg(Color::Magenta),
+            s if s.contains("blocked") => Style::default().fg(Color::Red),
+            s if s.contains("resolved") => Style::default().fg(Color::Green),
+            _ => Style::default().fg(Color::White),
         }
     }
 }
@@ -120,12 +160,7 @@ impl UiWidget for UiTable {
         .style(Style::default().bg(Color::DarkGray))
         .height(1);
 
-        let rows: Vec<Row> = this
-            .pbis
-            .iter()
-            .enumerate()
-            .map(|(idx, pbi)| this.build_row(idx, pbi))
-            .collect();
+        let rows: Vec<Row> = this.pbis.iter().map(|pbi| this.build_row(pbi)).collect();
 
         Table::new(rows, this.column_config.constraints())
             .header(header)
@@ -144,7 +179,7 @@ impl UiWidget for UiTable {
     }
 
     fn get_constraint(&self) -> Constraint {
-        Constraint::Length(1)
+        Constraint::Min(0)
     }
 
     fn skip(&self) -> bool {
