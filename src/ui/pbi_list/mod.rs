@@ -57,9 +57,8 @@ pub struct PbiListApp {
 
 impl PbiListApp {
     pub fn new(issues: Vec<Pbi>, filter: ListFilter, list_service: Arc<dyn ListService>) -> Self {
-        let table = PbiTable::new(ColumnConfig::list_view());
         Self {
-            table,
+            table: PbiTable::new(ColumnConfig::list_view(), issues.clone()),
             issues,
             filter,
             selected_pbi: None,
@@ -73,7 +72,6 @@ impl PbiListApp {
     }
 
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
-        self.table.load(self.issues.clone());
         while !self.exit {
             self.process_bg_messages();
             self.process_lua_commands();

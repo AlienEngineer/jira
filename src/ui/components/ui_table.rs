@@ -24,7 +24,7 @@ pub struct UiTable {
 impl UiTable {
     pub fn new(column_config: ColumnConfig, pbis: Vec<Pbi>) -> Self {
         Self {
-            table_state: TableState::default(),
+            table_state: TableState::default().with_selected(Some(0)),
             column_config,
             pbis,
         }

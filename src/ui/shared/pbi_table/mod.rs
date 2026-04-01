@@ -18,10 +18,10 @@ pub struct PbiTable {
 }
 
 impl PbiTable {
-    pub fn new(column_config: ColumnConfig) -> Self {
+    pub fn new(column_config: ColumnConfig, pbis: Vec<Pbi>) -> Self {
         let config = column_config.clone();
         Self {
-            table: UiTable::new(config, vec![]),
+            table: UiTable::new(config, pbis),
         }
     }
 
