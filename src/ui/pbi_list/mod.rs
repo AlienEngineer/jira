@@ -73,6 +73,7 @@ impl PbiListApp {
     }
 
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
+        self.table.load(self.issues.clone());
         while !self.exit {
             self.process_bg_messages();
             self.process_lua_commands();
@@ -195,7 +196,7 @@ impl PbiListApp {
         match msg {
             BgMsg::Loaded(issues) => {
                 let count = issues.len();
-                self.table.table.load(issues.clone());
+                self.table.load(issues.clone());
                 self.issues = issues;
                 self.footer.set_status(format!("{count} issues loaded"));
             }
