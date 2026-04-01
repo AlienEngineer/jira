@@ -16,7 +16,7 @@ use crate::ui::plugin_list::PluginListView;
 use crate::ui::shared::editor::{open_pbi_in_browser, open_raw_in_editor};
 use crate::ui::shared::pbi_table::{ColumnConfig, PbiTable, TableAction};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::layout::Rect;
 use ratatui::{DefaultTerminal, Frame};
 use std::env;
 use std::path::{Path, PathBuf};
