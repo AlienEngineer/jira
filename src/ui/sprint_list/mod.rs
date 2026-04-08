@@ -65,7 +65,7 @@ pub struct SprintApp {
 
 impl SprintApp {
     pub fn new(sprint: Sprint, sprint_service: Arc<dyn SprintService>) -> Self {
-        let table = PbiTable::new(ColumnConfig::sprint_view(), sprint.pbis.clone());
+        let table = PbiTable::new(sprint.pbis.clone());
         Self {
             table,
             sprint_service,
@@ -81,6 +81,7 @@ impl SprintApp {
     }
 
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
+        self.table.set_columns(ColumnConfig::sprint_view());
         while !self.exit {
             self.process_background_messages();
             self.process_lua_commands();

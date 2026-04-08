@@ -10,7 +10,7 @@ use crate::{
     jira::pbi::{pbi_elapsed_display, Pbi},
     ui::{
         components::ui_widget::UiWidget,
-        shared::pbi_table::{ColumnConfig, PbiColumn},
+        shared::pbi_table::{ColumnConfig, PbiColumn, TableColumn},
     },
 };
 
@@ -22,12 +22,20 @@ pub struct UiTable {
 }
 
 impl UiTable {
-    pub fn new(column_config: ColumnConfig, pbis: Vec<Pbi>) -> Self {
+    pub fn new(pbis: Vec<Pbi>) -> Self {
         Self {
             table_state: TableState::default().with_selected(Some(0)),
-            column_config,
+            column_config: ColumnConfig::new(),
             pbis,
         }
+    }
+
+    pub fn set_columns(&mut self, column_config: ColumnConfig) {
+        self.column_config = column_config;
+    }
+
+    pub fn add_column(&mut self, column: crate::lua::init::TableColumn) {
+        self.column_config.add_custom(column);
     }
 
     pub fn selected_index(&self) -> Option<usize> {
@@ -77,7 +85,7 @@ impl UiTable {
 
     fn build_table_widget(&self) -> Table<'static> {
         let header = Row::new(self.column_config.headers().iter().map(|h| {
-            Cell::from(*h).style(
+            Cell::from(h.clone()).style(
                 Style::default()
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
@@ -108,30 +116,40 @@ impl UiTable {
             .column_config
             .columns
             .iter()
-            .map(|col| self.build_cell(*col, pbi))
+            .map(|col| self.build_cell(col, pbi))
             .collect();
         Row::new(cells)
     }
 
-    fn build_cell(&self, column: PbiColumn, pbi: &Pbi) -> Cell<'static> {
+    fn build_cell(&self, column: &TableColumn, pbi: &Pbi) -> Cell<'static> {
         match column {
-            PbiColumn::Indicator => Cell::from(" "),
-            PbiColumn::Type => {
+            TableColumn::BuiltIn(PbiColumn::Indicator) => Cell::from(" "),
+            TableColumn::BuiltIn(PbiColumn::Type) => {
                 Cell::from(pbi.issue_type.clone()).style(Style::default().fg(Color::DarkGray))
             }
-            PbiColumn::Key => Cell::from(pbi.key.clone()).style(Style::default().fg(Color::Cyan)),
-            PbiColumn::Summary => Cell::from(pbi.summary.clone()),
-            PbiColumn::Status => {
+            TableColumn::BuiltIn(PbiColumn::Key) => {
+                Cell::from(pbi.key.clone()).style(Style::default().fg(Color::Cyan))
+            }
+            TableColumn::BuiltIn(PbiColumn::Summary) => Cell::from(pbi.summary.clone()),
+            TableColumn::BuiltIn(PbiColumn::Status) => {
                 Cell::from(pbi.status.clone()).style(self.status_color(&pbi.status))
             }
-            PbiColumn::Assignee => Cell::from(pbi.assignee.clone()),
-            PbiColumn::Age => {
+            TableColumn::BuiltIn(PbiColumn::Assignee) => Cell::from(pbi.assignee.clone()),
+            TableColumn::BuiltIn(PbiColumn::Age) => {
                 Cell::from(pbi_elapsed_display(pbi)).style(Style::default().fg(Color::DarkGray))
             }
-            PbiColumn::Priority => {
+            TableColumn::BuiltIn(PbiColumn::Priority) => {
                 let priority = pbi.priority.clone().unwrap_or_default();
                 Cell::from(priority)
             }
+            TableColumn::Custom(column) => match column.value_for(pbi, self.pbis.clone()) {
+                Ok(value) => Cell::from(value),
+                Err(error) => {
+                    println!("Error evaluating column {}", error);
+
+                    Cell::from(format!("error: {error}"))
+                }
+            },
         }
     }
 
@@ -151,7 +169,7 @@ impl UiWidget for UiTable {
     fn render(&mut self, area: Rect, buf: &mut Buffer) {
         let this = &self;
         let header = Row::new(this.column_config.headers().iter().map(|h| {
-            Cell::from(*h).style(
+            Cell::from(h.clone()).style(
                 Style::default()
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
@@ -187,7 +205,6 @@ impl UiWidget for UiTable {
     }
 
     fn render_widget(&mut self, frame: &mut Frame, area: Rect) {
-        let table_widget = self.build_table_widget();
-        frame.render_stateful_widget(table_widget, area, &mut self.table_state);
+        frame.render_stateful_widget(self.build_table_widget(), area, &mut self.table_state);
     }
 }

@@ -1,3 +1,4 @@
+use crate::lua::init::TableColumn as LuaTableColumn;
 use ratatui::layout::Constraint;
 
 /// Available columns for the PBI table.
@@ -51,51 +52,110 @@ impl PbiColumn {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum TableColumn {
+    BuiltIn(PbiColumn),
+    Custom(LuaTableColumn),
+}
+
+impl TableColumn {
+    pub fn header(&self) -> String {
+        match self {
+            TableColumn::BuiltIn(column) => column.header().to_string(),
+            TableColumn::Custom(column) => column.name().to_string(),
+        }
+    }
+
+    pub fn constraint(&self) -> Constraint {
+        match self {
+            TableColumn::BuiltIn(column) => column.constraint(),
+            TableColumn::Custom(column) => {
+                let width = (column.name().len() + 2).clamp(10, 20) as u16;
+                Constraint::Length(width)
+            }
+        }
+    }
+}
+
 /// Configuration for which columns to display in the table.
 #[derive(Debug, Clone)]
 pub struct ColumnConfig {
-    pub columns: Vec<PbiColumn>,
+    pub columns: Vec<TableColumn>,
 }
 
 impl ColumnConfig {
-    /// Sprint view configuration: 7 columns including indicator and age.
     pub fn sprint_view() -> Self {
         Self {
             columns: vec![
-                PbiColumn::Indicator,
-                PbiColumn::Type,
-                PbiColumn::Key,
-                PbiColumn::Summary,
-                PbiColumn::Status,
-                PbiColumn::Assignee,
-                PbiColumn::Age,
+                TableColumn::BuiltIn(PbiColumn::Indicator),
+                TableColumn::BuiltIn(PbiColumn::Type),
+                TableColumn::BuiltIn(PbiColumn::Key),
+                TableColumn::BuiltIn(PbiColumn::Summary),
+                TableColumn::BuiltIn(PbiColumn::Status),
+                TableColumn::BuiltIn(PbiColumn::Assignee),
+                TableColumn::BuiltIn(PbiColumn::Age),
             ],
         }
     }
 
-    /// List view configuration: same columns as sprint view.
     pub fn list_view() -> Self {
         Self::sprint_view()
     }
 
-    /// Get header labels for all columns.
-    pub fn headers(&self) -> Vec<&'static str> {
+    pub fn headers(&self) -> Vec<String> {
         self.columns.iter().map(|c| c.header()).collect()
     }
 
-    /// Get layout constraints for all columns.
     pub fn constraints(&self) -> Vec<Constraint> {
         self.columns.iter().map(|c| c.constraint()).collect()
     }
 
-    /// Check if this config includes a specific column.
     pub fn has_column(&self, column: PbiColumn) -> bool {
-        self.columns.contains(&column)
+        self.columns
+            .iter()
+            .any(|existing| matches!(existing, TableColumn::BuiltIn(current) if *current == column))
+    }
+
+    pub fn new() -> Self {
+        Self { columns: vec![] }
+    }
+
+    pub fn add_custom(&mut self, column: LuaTableColumn) {
+        self.columns.push(TableColumn::Custom(column));
     }
 }
 
 impl Default for ColumnConfig {
     fn default() -> Self {
         Self::list_view()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mlua::{Function, Lua};
+
+    fn custom_column(name: &str) -> (Lua, LuaTableColumn) {
+        let lua = Lua::new();
+        let func: Function = lua
+            .create_function(|_, ()| Ok(String::from("value")))
+            .expect("callback should be created");
+        let registry_key = lua
+            .create_registry_value(func)
+            .expect("callback should be stored");
+        (lua, LuaTableColumn::new(name.to_string(), registry_key))
+    }
+
+    // ── column configuration ──────────────────────────────────────────────────
+
+    #[test]
+    fn add_custom_appends_header_and_constraint() {
+        let mut config = ColumnConfig::new();
+        let (_lua, column) = custom_column("Cycle");
+        config.add_custom(column);
+
+        assert_eq!(config.headers(), vec![String::from("Cycle")]);
+        assert_eq!(config.constraints(), vec![Constraint::Length(10)]);
     }
 }

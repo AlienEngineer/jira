@@ -2,7 +2,7 @@ mod actions;
 mod columns;
 
 pub use actions::TableAction;
-pub use columns::{ColumnConfig, PbiColumn};
+pub use columns::{ColumnConfig, PbiColumn, TableColumn};
 
 use crate::jira::api::JiraApi;
 use crate::jira::pbi::{fetch_pbi_details, Pbi};
@@ -18,10 +18,9 @@ pub struct PbiTable {
 }
 
 impl PbiTable {
-    pub fn new(column_config: ColumnConfig, pbis: Vec<Pbi>) -> Self {
-        let config = column_config.clone();
+    pub fn new(pbis: Vec<Pbi>) -> Self {
         Self {
-            table: UiTable::new(config, pbis),
+            table: UiTable::new(pbis),
         }
     }
 
@@ -87,6 +86,10 @@ impl PbiTable {
                 }
             }
             JiraCommand::OpenInBrowser => self.open_in_browser(pbis),
+            JiraCommand::AddColumn(column) => {
+                self.table.add_column(column.clone());
+                vec![]
+            }
             JiraCommand::Quit => vec![TableAction::Exit],
             _ => vec![],
         }
@@ -128,5 +131,9 @@ impl PbiTable {
 
     pub fn load(&mut self, pbis: Vec<Pbi>) {
         self.table.load(pbis);
+    }
+
+    pub(crate) fn set_columns(&mut self, columns: ColumnConfig) {
+        self.table.set_columns(columns);
     }
 }

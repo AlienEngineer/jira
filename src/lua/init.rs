@@ -3,8 +3,8 @@ use crate::{
     jira::{pbi::Pbi, sprint::Sprint},
     prelude::Result,
 };
-use mlua::{Function, Lua, Table, Value};
-use std::path::Path;
+use mlua::{Function, Lua, RegistryKey, Table, Value};
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::{fs, sync::OnceLock};
@@ -53,6 +53,10 @@ const DEFAULT_INIT_LUA: &str = r#"
 --   jira_context.selected_pbi.priority     -- e.g. "High" (may be nil)
 --   jira_context.selected_pbi.story_points -- number (may be nil)
 --   jira_context.selected_pbi.labels       -- array of label strings
+--
+-- JSON HELPERS
+--   jira.json.decode(raw_json)         -- parse a JSON string into a Lua table/value
+--   jira.json.get(raw_json, field)     -- read a top-level field from a JSON string
 --
 -- GLOBAL
 jira.keymaps.set("j", jira.cmd.go_down)
@@ -143,6 +147,11 @@ jira.keymaps.set("F", jira.cmd.refresh_all, "Refresh all", "PbiList")
 jira.keymaps.set("r", jira.cmd.open_raw_pbi_json, "Raw Json", "Pbi")
 jira.keymaps.set("f", jira.cmd.refresh, "Refresh line", "Pbi")
 jira.keymaps.set("o", jira.cmd.open_in_browser, "Browser", "Pbi")
+
+-- CUSTOM COLUMNS
+-- jira.columns.add("Priority", function(view)
+-- 	return view.pbi.priority or ""
+-- end)
 "#;
 
 /// Commands that can be triggered from Lua and executed by SprintApp
@@ -167,6 +176,58 @@ pub enum JiraCommand {
     ChangePbiStatus(String, String),
     Print(String),
     Confirmation(String),
+    AddColumn(TableColumn),
+}
+
+#[derive(Clone)]
+pub struct TableColumn {
+    pub(crate) name: String,
+    get_value: Arc<RegistryKey>,
+}
+
+impl std::fmt::Debug for TableColumn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TableColumn")
+            .field("name", &self.name)
+            .finish()
+    }
+}
+
+impl TableColumn {
+    pub fn new(name: String, registry_key: RegistryKey) -> Self {
+        Self {
+            name,
+            get_value: Arc::new(registry_key),
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn value_for(&self, pbi: &Pbi, pbis: Vec<Pbi>) -> Result<String> {
+        let lua = get_lua_runtime().ok_or("Lua runtime not initialized")?;
+        self.value_for_with_lua(lua, pbi, pbis)
+    }
+
+    fn value_for_with_lua(&self, lua: &Lua, pbi: &Pbi, pbis: Vec<Pbi>) -> Result<String> {
+        let func: Function = lua.registry_value(self.get_value.as_ref())?;
+        let table = lua.create_table()?;
+        let lua_pbi = pbi_to_lua(lua, pbi)?;
+        table.set("pbi", lua_pbi)?;
+
+        let pbi_table = lua.create_table()?;
+
+        for (i, p) in pbis.iter().enumerate() {
+            pbi_table.set(i + 1, pbi_to_lua(lua, p)?)?;
+        }
+        table.set("pbis", pbi_table)?;
+
+        match func.call(table.clone()) {
+            Ok(result) => lua_value_to_string(result),
+            Err(e) => Err(format!("Error executing column callback: {}", e).into()),
+        }
+    }
 }
 
 static KEYMAP_COLLECTION: OnceLock<Arc<Mutex<KeyMapCollection>>> = OnceLock::new();
@@ -225,6 +286,64 @@ pub fn get_lua_runtime() -> Option<&'static Lua> {
 
 pub fn get_keymap_collection() -> Option<&'static Arc<Mutex<KeyMapCollection>>> {
     KEYMAP_COLLECTION.get()
+}
+
+/// Configure the Lua runtime so that `dofile`, `loadfile`, and `require` resolve
+/// relative paths against the config directory (e.g. `~/.config/jira/`).
+fn configure_lua_paths(lua: &Lua, config_dir: &str) -> Result<()> {
+    let config_path = PathBuf::from(config_dir);
+
+    // Update package.path so require("utils.estimation") works
+    let package: Table = lua.globals().get("package")?;
+    let current_path: String = package.get("path").unwrap_or_default();
+    let new_path = format!(
+        "{dir}/?.lua;{dir}/?/init.lua;{current}",
+        dir = config_path.display(),
+        current = current_path
+    );
+    package.set("path", new_path)?;
+
+    // Override dofile to resolve relative paths against the config dir
+    let dir_for_dofile = config_path.clone();
+    let custom_dofile = lua.create_function(move |lua, path: String| {
+        let resolved = if Path::new(&path).is_relative() {
+            dir_for_dofile.join(&path)
+        } else {
+            PathBuf::from(&path)
+        };
+
+        let contents = fs::read_to_string(&resolved).map_err(|e| {
+            mlua::Error::runtime(format!("dofile: cannot open '{}': {}", resolved.display(), e))
+        })?;
+
+        let value: Value = lua.load(&contents).set_name(path).eval()?;
+        Ok(value)
+    })?;
+    lua.globals().set("dofile", custom_dofile)?;
+
+    // Override loadfile to resolve relative paths against the config dir
+    let dir_for_loadfile = config_path;
+    let custom_loadfile = lua.create_function(move |lua, path: String| {
+        let resolved = if Path::new(&path).is_relative() {
+            dir_for_loadfile.join(&path)
+        } else {
+            PathBuf::from(&path)
+        };
+
+        let contents = fs::read_to_string(&resolved).map_err(|e| {
+            mlua::Error::runtime(format!(
+                "loadfile: cannot open '{}': {}",
+                resolved.display(),
+                e
+            ))
+        })?;
+
+        let func: Function = lua.load(&contents).set_name(path).into_function()?;
+        Ok(func)
+    })?;
+    lua.globals().set("loadfile", custom_loadfile)?;
+
+    Ok(())
 }
 
 pub fn init_lua_config() -> Result<()> {
@@ -333,7 +452,32 @@ pub fn init_lua_config() -> Result<()> {
     keymap_functions.set("set", set_function)?;
     jira.set("keymaps", keymap_functions)?;
 
+    let add_column = lua.create_function(|lua, (name, func): (String, Function)| {
+        let trimmed_name = name.trim();
+        if trimmed_name.is_empty() {
+            return Err(mlua::Error::runtime("Column name cannot be empty"));
+        }
+
+        let registry_key = lua
+            .create_registry_value(func)
+            .map_err(|e| mlua::Error::runtime(format!("Failed to store column callback: {e}")))?;
+
+        send_command(JiraCommand::AddColumn(TableColumn::new(
+            trimmed_name.to_string(),
+            registry_key,
+        )));
+        Ok(())
+    })?;
+    let column_functions = lua.create_table()?;
+    column_functions.set("add", add_column)?;
+    jira.set("columns", column_functions)?;
+    register_json_functions(&lua, &jira)?;
+
     lua.globals().set("jira", jira)?;
+
+    // Make dofile / loadfile / require resolve relative paths against the config dir
+    // so that e.g. dofile("utils/estimation.lua") works from init.lua.
+    configure_lua_paths(&lua, &destination_dir)?;
 
     // Execute all config scripts
     for script in scripts.unwrap_or_default() {
@@ -375,11 +519,7 @@ pub fn execute_keymap_action(keymap: &crate::config::keymaps::KeyMap) -> Result<
     let lua = get_lua_runtime().ok_or("Lua runtime not initialized")?;
     let func: Function = lua.registry_value(&keymap.func)?;
     let result: Value = func.call(())?;
-    match result {
-        Value::String(s) => Ok(s.to_str()?.to_string()),
-        Value::Nil => Ok(String::new()),
-        other => Ok(format!("{:?}", other)),
-    }
+    lua_value_to_string(result)
 }
 
 pub fn get_init_lua_config_path() -> String {
@@ -500,5 +640,211 @@ fn pbi_to_lua(lua: &Lua, pbi: &Pbi) -> Result<Table> {
     table.set("in_progress_at", pbi.in_progress_at.clone())?;
     table.set("resolved_at", pbi.resolved_at.clone())?;
     table.set("elapsed_minutes", pbi.elapsed_minutes())?;
+    table.set("raw", pbi.raw.clone())?;
     Ok(table)
+}
+
+fn register_json_functions(lua: &Lua, jira: &Table) -> mlua::Result<()> {
+    let decode_json = lua.create_function(|lua, raw_json: String| {
+        let parsed = parse_json_string(&raw_json)?;
+        json_value_to_lua(lua, &parsed)
+    })?;
+
+    let get_json_field = lua.create_function(|lua, (raw_json, field): (String, String)| {
+        let parsed = parse_json_string(&raw_json)?;
+        let value = get_json_field_value(&parsed, &field)?;
+        json_value_to_lua(lua, value)
+    })?;
+
+    let json_functions = lua.create_table()?;
+    json_functions.set("decode", decode_json)?;
+    json_functions.set("get", get_json_field)?;
+    jira.set("json", json_functions)?;
+    Ok(())
+}
+
+fn parse_json_string(raw_json: &str) -> mlua::Result<json::JsonValue> {
+    json::parse(raw_json).map_err(|e| mlua::Error::runtime(format!("Failed to decode JSON: {e}")))
+}
+
+fn get_json_field_value<'a>(
+    parsed: &'a json::JsonValue,
+    field: &str,
+) -> mlua::Result<&'a json::JsonValue> {
+    let field_name = field.trim();
+    if field_name.is_empty() {
+        return Err(mlua::Error::runtime("JSON field cannot be empty"));
+    }
+
+    parsed
+        .entries()
+        .find_map(|(key, value)| (key == field_name).then_some(value))
+        .ok_or_else(|| mlua::Error::runtime(format!("JSON field not found: {field_name}")))
+}
+
+fn json_value_to_lua(lua: &Lua, value: &json::JsonValue) -> mlua::Result<Value> {
+    match value {
+        json::JsonValue::Null => Ok(Value::Nil),
+        json::JsonValue::Short(text) => Ok(Value::String(lua.create_string(text.as_str())?)),
+        json::JsonValue::String(text) => Ok(Value::String(lua.create_string(text.as_str())?)),
+        json::JsonValue::Number(number) => {
+            Ok(Value::Number(number.to_string().parse::<f64>().map_err(
+                |e| mlua::Error::runtime(format!("Failed to convert JSON number: {e}")),
+            )?))
+        }
+        json::JsonValue::Boolean(boolean) => Ok(Value::Boolean(*boolean)),
+        json::JsonValue::Object(object) => {
+            let table = lua.create_table()?;
+            for (key, nested) in object.iter() {
+                table.set(key, json_value_to_lua(lua, nested)?)?;
+            }
+            Ok(Value::Table(table))
+        }
+        json::JsonValue::Array(items) => {
+            let table = lua.create_table()?;
+            for (index, nested) in items.iter().enumerate() {
+                table.set(index + 1, json_value_to_lua(lua, nested)?)?;
+            }
+            Ok(Value::Table(table))
+        }
+    }
+}
+
+fn lua_value_to_string(value: Value) -> Result<String> {
+    match value {
+        Value::String(s) => Ok(s.to_str()?.to_string()),
+        Value::Nil => Ok(String::new()),
+        Value::Boolean(b) => Ok(b.to_string()),
+        Value::Integer(i) => Ok(i.to_string()),
+        Value::Number(n) => Ok(n.to_string()),
+        other => Ok(format!("{:?}", other)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pbi() -> Pbi {
+        Pbi {
+            key: "TEST-7".into(),
+            summary: "Implement Lua column".into(),
+            status: "In Progress".into(),
+            assignee: "Ada".into(),
+            issue_type: "Story".into(),
+            description: None,
+            priority: Some("High".into()),
+            story_points: Some(3.0),
+            labels: vec!["backend".into()],
+            loaded: true,
+            in_progress_at: None,
+            resolved_at: None,
+            raw: "{}".into(),
+            resolution: None,
+            components: vec![],
+            creator: "Ada".into(),
+            reporter: "Ada".into(),
+            project: "TEST".into(),
+        }
+    }
+
+    // ── table columns ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn table_column_callback_receives_pbi_and_returns_string_value() {
+        let lua = Lua::new();
+        let func: Function = lua
+            .create_function(|_, view: Table| {
+                let pbi: Table = view.get("pbi")?;
+                let key: String = pbi.get("key")?;
+                let status: String = pbi.get("status")?;
+                Ok(format!("{key}:{status}"))
+            })
+            .expect("column callback should be created");
+        let registry_key = lua
+            .create_registry_value(func)
+            .expect("callback should be stored");
+        let column = TableColumn::new("State".into(), registry_key);
+
+        let value = column
+            .value_for_with_lua(&lua, &pbi(), vec![])
+            .expect("callback should execute");
+
+        assert_eq!(value, "TEST-7:In Progress");
+    }
+
+    #[test]
+    fn json_value_to_lua_decodes_nested_objects_and_arrays() {
+        let lua = Lua::new();
+        let parsed = json::parse(r#"{"story_points":3,"fields":{"labels":["backend","urgent"]}}"#)
+            .expect("json should parse");
+
+        let value = json_value_to_lua(&lua, &parsed).expect("json should convert");
+        let table = match value {
+            Value::Table(table) => table,
+            other => panic!("expected table, got {:?}", other),
+        };
+
+        let story_points: f64 = table
+            .get("story_points")
+            .expect("story_points should exist");
+        let fields: Table = table.get("fields").expect("fields should exist");
+        let labels: Table = fields.get("labels").expect("labels should exist");
+        let first: String = labels.get(1).expect("first label should exist");
+        let second: String = labels.get(2).expect("second label should exist");
+
+        assert_eq!(story_points, 3.0);
+        assert_eq!(first, "backend");
+        assert_eq!(second, "urgent");
+    }
+
+    #[test]
+    fn json_get_style_lookup_returns_value_for_named_field() {
+        let lua = Lua::new();
+        let raw = r#"{"customfield_10006":5,"fields":{"summary":"Test"}}"#;
+        let parsed = json::parse(raw).expect("json should parse");
+        let field = parsed["customfield_10006"].clone();
+
+        let value = json_value_to_lua(&lua, &field).expect("field should convert");
+
+        match value {
+            Value::Number(number) => assert_eq!(number, 5.0),
+            other => panic!("expected number, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn register_json_functions_exposes_decode_and_get_to_lua() {
+        let lua = Lua::new();
+        let jira = lua.create_table().expect("jira table should be created");
+        register_json_functions(&lua, &jira).expect("json functions should register");
+        lua.globals()
+            .set("jira", jira)
+            .expect("jira should be available globally");
+
+        let decoded_summary: String = lua
+            .load(
+                r#"
+                local obj = jira.json.decode('{"fields":{"summary":"Test"}}')
+                return obj.fields.summary
+            "#,
+            )
+            .eval()
+            .expect("decode should work");
+
+        let points: f64 = lua
+            .load(r#"return jira.json.get('{"customfield_10006":8}', "customfield_10006")"#)
+            .eval()
+            .expect("get should work");
+
+        assert_eq!(decoded_summary, "Test");
+        assert_eq!(points, 8.0);
+    }
+
+    #[test]
+    fn lua_value_to_string_turns_nil_into_empty_string() {
+        let value = lua_value_to_string(Value::Nil).expect("nil should stringify");
+
+        assert_eq!(value, "");
+    }
 }

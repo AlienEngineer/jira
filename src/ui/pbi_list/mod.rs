@@ -58,7 +58,7 @@ pub struct PbiListApp {
 impl PbiListApp {
     pub fn new(issues: Vec<Pbi>, filter: ListFilter, list_service: Arc<dyn ListService>) -> Self {
         Self {
-            table: PbiTable::new(ColumnConfig::list_view(), issues.clone()),
+            table: PbiTable::new(issues.clone()),
             issues,
             filter,
             selected_pbi: None,
@@ -72,6 +72,7 @@ impl PbiListApp {
     }
 
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
+        self.table.set_columns(ColumnConfig::list_view());
         while !self.exit {
             self.process_bg_messages();
             self.process_lua_commands();
@@ -90,7 +91,6 @@ impl PbiListApp {
         Ok(())
     }
 
-    /// Process any commands received from Lua keybindings
     fn process_lua_commands(&mut self) {
         let commands: Vec<JiraCommand> = {
             let Some(rx) = &self.command_rx else { return };
@@ -101,21 +101,11 @@ impl PbiListApp {
             match &mut self.active_view {
                 ActiveView::List => self.process_list_command(cmd),
                 ActiveView::Detail(detail) => match cmd {
-                    JiraCommand::GoLeft => {
-                        self.active_view = ActiveView::List;
-                    }
-                    JiraCommand::Quit => {
-                        self.exit = true;
-                    }
-                    JiraCommand::GoUp => {
-                        detail.scroll_up();
-                    }
-                    JiraCommand::GoDown => {
-                        detail.scroll_down();
-                    }
-                    JiraCommand::OpenRawPbiJson => {
-                        self.selected_pbi = Some(detail.pbi.clone());
-                    }
+                    JiraCommand::GoLeft => self.active_view = ActiveView::List,
+                    JiraCommand::Quit => self.exit = true,
+                    JiraCommand::GoUp => detail.scroll_up(),
+                    JiraCommand::GoDown => detail.scroll_down(),
+                    JiraCommand::OpenRawPbiJson => self.selected_pbi = Some(detail.pbi.clone()),
                     JiraCommand::OpenInBrowser => match open_pbi_in_browser(&detail.pbi.key) {
                         Ok(msg) => self.footer.set_status(msg),
                         Err(msg) => self.footer.set_status(msg),
@@ -130,36 +120,26 @@ impl PbiListApp {
                     }
                     _ => {}
                 },
-                ActiveView::FilterEditor(_) => {
-                    // Filter editor handles its own keys directly, not via commands
-                }
+                _ => {}
             }
         }
     }
 
     fn process_list_command(&mut self, cmd: JiraCommand) {
-        // Let the table handle common commands (navigation, open detail, browser, etc.)
         let actions = self.table.handle_command(&cmd, &self.issues);
         for action in actions {
             self.dispatch(action);
         }
 
-        // Handle list-specific commands
         match cmd {
-            JiraCommand::GoLeft => {
-                // no-op or back
-            }
-            JiraCommand::RefreshAll => {
-                let filter = self.filter.clone();
-                self.start_fetch(filter);
-            }
+            JiraCommand::RefreshAll => self.start_fetch(self.filter.clone()),
             JiraCommand::OpenFilter => {
-                let editor = FilterEditor::new(self.filter.clone());
-                self.active_view = ActiveView::FilterEditor(Box::new(editor));
+                self.active_view =
+                    ActiveView::FilterEditor(Box::new(FilterEditor::new(self.filter.clone())))
             }
-            JiraCommand::Print(msg) => {
-                self.footer.set_status(msg);
-            }
+
+            JiraCommand::Print(msg) => self.footer.set_status(msg),
+
             _ => {}
         }
     }

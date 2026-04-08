@@ -117,3 +117,201 @@ jira.keymaps.set("F", jira.cmd.refresh_all, "Refresh all", "PbiList")
 jira.keymaps.set("r", jira.cmd.open_raw_pbi_json, "Raw Json", "Pbi")
 jira.keymaps.set("f", jira.cmd.refresh, "Refresh line", "Pbi")
 jira.keymaps.set("o", jira.cmd.open_in_browser, "Browser", "Pbi")
+
+-- Estimation analysis helpers
+
+function filter(array, filterIterator)
+	local result = {}
+	for key, value in pairs(array) do
+		if filterIterator(value, key, array) then
+			table.insert(result, value)
+		end
+	end
+	return result
+end
+
+function Get_story_points(pbi)
+	return jira.json.get(pbi.raw, "customfield_10006") or "N/A"
+end
+
+function Get_pbis_by_story_points(pbis, pbi)
+	local points = Get_story_points(pbi)
+	return filter(pbis, function(pbi_iter, key, index)
+		return pbi.key ~= pbi_iter.key and Get_story_points(pbi_iter) == points
+	end)
+end
+
+function Calculate_average_days(pbis)
+	local total_points = 0
+	local count = 0
+	for _, pbi in ipairs(pbis) do
+		local days = pbi.elapsed_minutes / 24.0 / 60
+		if type(days) == "number" then
+			total_points = total_points + days
+			count = count + 1
+		end
+	end
+	return count > 0 and math.ceil(total_points / count) or "N/A"
+end
+
+function Find_story_points(pbis)
+	local points_count = {}
+	for _, pbi in ipairs(pbis) do
+		local points = Get_story_points(pbi)
+		if points ~= "N/A" then
+			points_count[points] = (points_count[points] or 0) + 1
+		end
+	end
+	return points_count
+end
+
+function Get_days_per_story_point(pbis)
+	local results = {}
+	local story_points = Find_story_points(pbis)
+
+	for points, count in pairs(story_points) do
+		results[points] = {}
+		local filtered_pbis = filter(pbis, function(pbi)
+			return Get_story_points(pbi) == points
+		end)
+
+		for _, pbi in ipairs(filtered_pbis) do
+			local days = math.ceil(pbi.elapsed_minutes / 24.0 / 60)
+			if type(days) == "number" and days < 14 then
+				table.insert(results[points], days)
+			end
+		end
+	end
+
+	return results
+end
+
+function Calculate_mean(values)
+	if #values == 0 then
+		return "N/A"
+	end
+	local sum = 0
+	for _, v in ipairs(values) do
+		sum = sum + v
+	end
+	return sum / #values
+end
+
+function Calculate_average_days_per_story_point(pbis)
+	local days_per_point = Get_days_per_story_point(pbis)
+	local averages = {}
+
+	for sp, days in pairs(days_per_point) do
+		averages[sp] = Calculate_mean(days)
+	end
+
+	return averages
+end
+
+function Calculate_stdev(values)
+	local mean = Calculate_mean(values)
+	if mean == "N/A" then
+		return "N/A"
+	end
+
+	local sum_of_squares = 0
+	local count = #values
+
+	for _, value in ipairs(values) do
+		sum_of_squares = sum_of_squares + (value - mean) ^ 2
+	end
+
+	return count > 1 and math.sqrt(sum_of_squares / (count - 1)) or 0
+end
+
+function Calculate_stdev_per_story_point(pbis)
+	local days_per_point = Get_days_per_story_point(pbis)
+	local stdevs = {}
+
+	for sp, days in pairs(days_per_point) do
+		stdevs[sp] = Calculate_stdev(days)
+	end
+
+	return stdevs
+end
+
+function Find_closest_story_point(pbi_days, avg_per_sp)
+	local closest_sp = nil
+	local min_distance = math.huge
+
+	for sp, avg in pairs(avg_per_sp) do
+		if avg ~= "N/A" then
+			local distance = math.abs(pbi_days - avg)
+			if distance < min_distance then
+				min_distance = distance
+				closest_sp = sp
+			end
+		end
+	end
+
+	return closest_sp
+end
+
+-- Columns
+
+jira.columns.add(" SPs ", function(view)
+	return Get_story_points(view.pbi)
+end)
+
+jira.columns.add("Estimation Accuracy", function(view)
+	local sp = Get_story_points(view.pbi)
+	if sp == "N/A" then
+		return "N/A"
+	end
+
+	local days = math.ceil(view.pbi.elapsed_minutes / 24.0 / 60)
+	if days >= 14 then
+		return "Failure"
+	end
+
+	local avg_per_sp = Calculate_average_days_per_story_point(view.pbis)
+	local stdevs = Calculate_stdev_per_story_point(view.pbis)
+	local mean = avg_per_sp[sp]
+	local stdev = stdevs[sp]
+
+	if mean == "N/A" then
+		return "N/A"
+	end
+
+	local closest_sp = Find_closest_story_point(days, avg_per_sp)
+
+	-- Check if actual duration fits a different SP category better
+	if closest_sp and closest_sp ~= sp then
+		if closest_sp < sp then
+			return "Over (fits ~" .. closest_sp .. " SP)"
+		else
+			return "Under (fits ~" .. closest_sp .. " SP)"
+		end
+	end
+
+	-- Z-score: how many std devs from the mean of the PBI's own SP category
+	if stdev ~= "N/A" and stdev > 0 then
+		local z = math.abs(days - mean) / stdev
+		if z <= 0.5 then
+			return "Perfect"
+		elseif z <= 1.0 then
+			return "Good"
+		elseif z <= 2.0 then
+			return "Fair"
+		else
+			return "Poor"
+		end
+	end
+
+	-- stdev is 0 (all PBIs with this SP took exactly the same time)
+	local diff = math.abs(days - mean)
+	if diff == 0 then
+		return "Perfect"
+	elseif diff <= 1 then
+		return "Good"
+	elseif diff <= 2 then
+		return "Fair"
+	else
+		return "Poor"
+	end
+end)
