@@ -313,7 +313,11 @@ fn configure_lua_paths(lua: &Lua, config_dir: &str) -> Result<()> {
         };
 
         let contents = fs::read_to_string(&resolved).map_err(|e| {
-            mlua::Error::runtime(format!("dofile: cannot open '{}': {}", resolved.display(), e))
+            mlua::Error::runtime(format!(
+                "dofile: cannot open '{}': {}",
+                resolved.display(),
+                e
+            ))
         })?;
 
         let value: Value = lua.load(&contents).set_name(path).eval()?;
